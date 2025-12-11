@@ -20,8 +20,8 @@ A beautifully designed **iOS Budget Tracker App** built with **SwiftUI** and **S
 
 ## 🚀 Overview
 
-The **Budget Tracker App** allows users to manage their daily expenses efficiently with clean visuals and a seamless experience.  
-It supports **bill scanning**, **charts**, **detailed expense tracking**, and **cross-device sync** through iCloud.
+The Budget Tracker App allows users to manage their financial activities smoothly with a clean, modern design.
+It supports charts, category insights, detailed expense tracking, and secure backup/restore through iCloud
 
 ---
 
@@ -32,29 +32,43 @@ It supports **bill scanning**, **charts**, **detailed expense tracking**, and **
 - Bottom sheet for entering username and continuing to the home screen.
 
 ### 📊 Dashboard
-- **Line chart** to visualize monthly expense trends.  
-- **Donut chart** to show the balance between income and expenses.  
-- Section for **Top Expenses** below the charts.  
-- Month toggle to switch between current and previous months.
-
-### 📱 Expense Management
-- Add, edit, and delete expenses.  
+- Credit-card style summary card showing:
+      -Total Budget
+      -Total Spent
+      -Remaining Balance
+- Search bar and filters to quickly find transactions.
+- Complete list of all income and expenses.
+- Each transaction opens a detailed view with:
+      - Amount
+      - Category
+      - Description
+      - Edit
+      - Delete
+- Floating Action Button to open a bottom sheet for:
+- Adding Income And Expense 
 - Swipe left to delete entries.  
 - Detailed expense view with editing capability.
 
-### 🧾 Document Scanning
-- Scan bills using the device camera.  
-- Automatically extract and add expenses from scanned bills.
+### 📱 Stats
+- Interactive line chart showing monthly spending trends.  
+- “Top Spending Categories” section ranked from high to low.
+- Each category is clickable, opening a detail screen showing:
+    - All transactions under that category
+    - Budget vs Expense analysis
+- One-tap option to export the category report as PDF
+
+### Settings & Account
+- User profile card showing username.
+- Apple Sign-In support for cloud sync.
+- About card leading to app information screen.
+
 
 ### ☁️ Cloud Sync & Authentication
-- **Apple Sign-In** for secure login.  
-- **iCloud Sync** for automatic cross-device synchronization.
+- Fully integrated Apple Sign-In for secure Login
+- iCloud Sync for automatic cross-device synchronization.
 
 ### 🔔 Notifications Panel
 - Stay informed with a built-in notifications section for alerts and updates.
-
-### ⚙️ Optimizations
-- Smooth UI animations and minor performance improvements across screens.
 
 ---
 
