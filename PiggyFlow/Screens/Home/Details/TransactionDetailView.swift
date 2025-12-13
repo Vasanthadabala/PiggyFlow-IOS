@@ -24,13 +24,36 @@ struct TransactionDetailView: View {
         VStack(spacing: 24) {
             VStack {
                 HStack {
-                    Text(item.emoji)
-                        .font(.system(size: 24))
+                    
+                    if item.type == "Expense" {
+                        Text(item.emoji)
+                            .font(.system(size: 24))
+                        
+                        Spacer().frame(width: 24)
+                        
+                        Text(item.title)
+                            .font(.system(size: 24, weight: .semibold, design: .serif))
+                    }
+                    
                     
                     Spacer().frame(width: 24)
                     
-                    Text(item.title)
-                        .font(.system(size: 24, weight: .semibold, design: .serif))
+                    if item.type == "Income" {
+                        Text(item.emoji)
+                            .font(.system(size: 24))
+                        
+                        Spacer().frame(width: 12)
+                        
+                        Text(item.type)
+                            .font(.system(size: 24, weight: .semibold, design: .serif))
+                        
+                        Spacer().frame(width: 8)
+                        
+                        Text("(\(item.title))")
+                            .font(.system(size: 22, weight: .semibold, design: .serif))
+                            .foregroundColor(Color.gray.opacity(0.5))
+                    }
+                    
                 }
                 
                 Spacer().frame(height: 48)

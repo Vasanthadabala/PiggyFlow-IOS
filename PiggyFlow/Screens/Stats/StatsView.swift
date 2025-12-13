@@ -8,37 +8,35 @@ struct StatsView: View {
     @Query private var expenses: [Expense]
     @Query private var incomes: [Income]
     
-    @State private var selectedChartType: ChartType = .line
     @State private var selectedMonth: Date = Date()
     
-    enum ChartType: String, CaseIterable {
-        case line = "Line"
-        case donut = "Donut"
-    }
+    //BottomSheet
+    @State private var selectedCategory: CategoryData? = nil
+    
     
     // Month Range (Last 12 months)
-        private var recentMonths: [Date] {
-            let calendar = Calendar.current
-            let current = calendar.startOfMonth(for: Date())
-            return (0..<12).compactMap { offset in
-                calendar.date(byAdding: .month, value: -offset, to: current)
-            }.reversed()
+    private var recentMonths: [Date] {
+        let calendar = Calendar.current
+        let current = calendar.startOfMonth(for: Date())
+        return (0..<12).compactMap { offset in
+            calendar.date(byAdding: .month, value: -offset, to: current)
+        }.reversed()
+    }
+    
+    // Filtered Data for selected month
+    private var filteredExpenses: [Expense] {
+        let calendar = Calendar.current
+        return expenses.filter {
+            calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
         }
-        
-        // Filtered Data for selected month
-        private var filteredExpenses: [Expense] {
-            let calendar = Calendar.current
-            return expenses.filter {
-                calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
-            }
+    }
+    
+    private var filteredIncomes: [Income] {
+        let calendar = Calendar.current
+        return incomes.filter {
+            calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
         }
-        
-        private var filteredIncomes: [Income] {
-            let calendar = Calendar.current
-            return incomes.filter {
-                calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
-            }
-        }
+    }
     
     // Total income
     private var totalIncome: Double {
@@ -54,7 +52,7 @@ struct StatsView: View {
     private var expensesByCategory: [CategoryData] {
         var categoryDict: [String: Double] = [:]
         
-        for expense in expenses {
+        for expense in filteredExpenses {
             let key = expense.name
             categoryDict[key, default: 0] += expense.price
         }
@@ -76,7 +74,7 @@ struct StatsView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 4) {
             // Month Selector with Arrows
             HStack {
                 Button(action: {
@@ -125,15 +123,6 @@ struct StatsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     
-                    // Chart Type Picker
-                    Picker("Chart Type", selection: $selectedChartType) {
-                        ForEach(ChartType.allCases, id: \.self) { type in
-                            Text(type.rawValue).tag(type)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                    
                     // Summary Cards
                     HStack(spacing: 16) {
                         SummaryCard(title: "Income", amount: totalIncome, color: .green, icon: "arrow.down.left")
@@ -145,7 +134,7 @@ struct StatsView: View {
                         .padding(.horizontal)
                     
                     // Check if there’s any data this month
-                    if filteredExpenses.isEmpty && filteredIncomes.isEmpty {
+                    if filteredExpenses.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "tray.fill")
                                 .font(.system(size: 40))
@@ -153,7 +142,7 @@ struct StatsView: View {
                             Text("No data for this month")
                                 .font(.title3)
                                 .fontWeight(.semibold)
-                            Text("Add some expenses or income to see your insights!")
+                            Text("Add some expenses to see your insights!")
                                 .font(.subheadline)
                                 .foregroundColor(.gray)
                         }
@@ -161,12 +150,7 @@ struct StatsView: View {
                         .padding(.top, 40)
                     } else {
                         // Chart Display
-                        switch selectedChartType {
-                        case .donut:
-                            donutChartView
-                        case .line:
-                            lineChartView
-                        }
+                        lineChartView
                         
                         // Category Breakdown
                         if !expensesByCategory.isEmpty {
@@ -178,6 +162,13 @@ struct StatsView: View {
                 }
                 .padding(.top)
             }
+        }
+        .fullScreenCover(item: $selectedCategory) { category in
+            CategoryDetailSheet(
+                categoryName: category.category,
+                expenses: filteredExpenses,
+                incomes: filteredIncomes
+            )
         }
     }
     
@@ -271,51 +262,59 @@ struct StatsView: View {
                 .padding(.horizontal)
             
             ForEach(expensesByCategory.prefix(5)) { category in
-                HStack {
-                    Text(category.emoji)
-                        .font(.title2)
-                        .frame(width: 40, height: 40)
-                        .background(Color.red.opacity(0.1))
-                        .clipShape(Circle())
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(category.category)
-                            .font(.system(size: 16, weight: .medium))
-                        
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.gray.opacity(0.2))
-                                    .frame(height: 6)
-                                
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.red.gradient)
-                                    .frame(
-                                        width: geo.size.width * CGFloat(
-                                            totalExpenses > 0 ? max(0, min(category.amount / totalExpenses, 1)) : 0
-                                        ),
-                                        height: 6
-                                    )
-
-                            }
-                        }
-                        .frame(height: 6)
-                    }
-                    
-                    Spacer()
-                    
-                    VStack(alignment: .trailing) {
-                        Text("₹\(String(format: "%.2f", category.amount))")
-                            .font(.system(size: 15, weight: .semibold))
-                        Text("\(Int(totalExpenses > 0 ? (category.amount / totalExpenses) * 100 : 0))%")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
+                Button {
+                    selectedCategory = category
+                } label: {
+                    categoryRow(category) // move row UI into function
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
+                .buttonStyle(.plain)
             }
         }
+    }
+    
+    private func categoryRow(_ category: CategoryData) -> some View {
+        HStack {
+            Text(category.emoji.isEmpty ? category.category.prefix(1).uppercased() : category.emoji)
+                .font(.system(size: 24))
+                .frame(width: 40, height: 40)
+                .background(Color.red.opacity(0.1))
+                .clipShape(Circle())
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(category.category)
+                    .font(.system(size: 16, weight: .medium))
+                
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(height: 6)
+                        
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.red.gradient)
+                            .frame(
+                                width: geo.size.width * CGFloat(
+                                    totalExpenses > 0 ? max(0, min(category.amount / totalExpenses, 1)) : 0
+                                ),
+                                height: 6
+                            )
+                    }
+                }
+                .frame(height: 6)
+            }
+            
+            Spacer()
+            
+            VStack(alignment: .trailing) {
+                Text("₹\(String(format: "%.2f", category.amount))")
+                    .font(.system(size: 15, weight: .semibold))
+                Text("\(Int(totalExpenses > 0 ? (category.amount / totalExpenses) * 100 : 0))%")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
     }
     
     // Helper function to group expenses by date

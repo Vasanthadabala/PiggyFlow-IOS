@@ -44,7 +44,7 @@ struct OnBoardingScreen: View {
                 .cornerRadius(12)
             }
             .padding()
-            .sheet(isPresented: $showBottomSheet) {
+            .fullScreenCover(isPresented: $showBottomSheet) {
                 BottomSheetView()
             }
             // ✅ Automatically navigate if username exists
@@ -64,6 +64,9 @@ struct BottomSheetView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
+                Spacer()
+                    .frame(height: 32)
+                
                 // Close button pinned at top right
                 HStack {
                     Spacer()

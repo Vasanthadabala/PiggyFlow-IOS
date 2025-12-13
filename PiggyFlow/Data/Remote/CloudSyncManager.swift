@@ -12,6 +12,7 @@ struct CloudSyncManager {
             // ✅ Recreate data to avoid context ownership conflict
             for expense in expenses {
                 let newExpense = Expense(
+                    type: expense.type,
                     emoji: expense.emoji,
                     name: expense.name,
                     price: expense.price,
@@ -23,6 +24,9 @@ struct CloudSyncManager {
             
             for income in incomes {
                 let newIncome = Income(
+                    type: income.type,
+                    emoji: income.emoji,
+                    name: income.name,
                     income: income.income,
                     date: income.date,
                     note: income.note

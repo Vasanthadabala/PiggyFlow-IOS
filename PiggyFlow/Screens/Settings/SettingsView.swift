@@ -22,7 +22,7 @@ struct SettingsView: View {
                         Text(userName)
                             .font(.system(size: 20, weight: .medium, design: .serif))
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 2)
                 }
                 .listRowBackground(Color.gray.opacity(0.1))
                 

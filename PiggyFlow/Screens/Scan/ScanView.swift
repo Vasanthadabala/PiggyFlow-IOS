@@ -19,6 +19,10 @@ struct ScanView: View {
 
     var body: some View {
         VStack(spacing: 24) {
+            Text("Beta Version")
+                .font(.system(size: 16, weight: .regular, design: .serif))
+                .foregroundColor(.gray)
+            
             Image(systemName: "doc.text.viewfinder")
                 .resizable()
                 .scaledToFit()
@@ -89,6 +93,7 @@ struct ScanView: View {
         // Save parsed items to SwiftData
         for parsed in parsedItems {
             let newExpense = Expense(
+                type:"Expense",
                 emoji: "🧾",
                 name: parsed.item,
                 price: parsed.price,

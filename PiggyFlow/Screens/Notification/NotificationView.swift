@@ -13,6 +13,8 @@ struct NotificationView: View {
             Text("No Notification")
                 .font(.system(size: 18, weight: .ultraLight, design: .serif))
         }
+        .navigationTitle("Notifications")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

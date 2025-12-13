@@ -9,11 +9,15 @@ struct ProfileView: View {
     var body: some View {
         ZStack{
             VStack(){
-                Image("onboarding_image")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 120, height: 120)
-                    .clipShape(Circle())
+                ZStack{
+                    Circle()
+                        .fill(Color.green.gradient)
+                        .frame(width: 96, height: 96)
+                    
+                    Text(userName.prefix(1).uppercased())
+                        .font(.system(size: 48, weight: .bold, design: .serif))
+                        .foregroundColor(.white)
+                }
                 
                 Spacer()
                     .frame(height: 24)
@@ -119,6 +123,8 @@ struct ProfileView: View {
                 .animation(.easeInOut, value: showToast)
             }
         }
+        .navigationTitle("Profile")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

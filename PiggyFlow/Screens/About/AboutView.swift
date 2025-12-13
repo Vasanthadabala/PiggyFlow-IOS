@@ -38,13 +38,6 @@ struct AboutView: View {
                     .font(.footnote)
                     .foregroundColor(.secondary)
             }
-            
-            Spacer()
-            
-            // App version (optional)
-            Text("Version 1.0.1")
-                .font(.footnote)
-                .foregroundColor(.gray)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()

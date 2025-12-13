@@ -61,7 +61,14 @@ struct HomeView: View {
         var title: String {
             switch self {
             case .expense(let e): return e.name
-            case .income: return "Income"
+            case .income(let i): return i.name
+            }
+        }
+        
+        var type: String {
+            switch self {
+            case .expense(let e): return e.type
+            case .income(let i): return (i.type)
             }
         }
         
@@ -82,7 +89,7 @@ struct HomeView: View {
         var note: String {
             switch self {
             case .expense(let e): return String(e.note)
-            case .income: return " "
+            case .income(let i): return String(i.note)
             }
         }
         
@@ -145,11 +152,15 @@ struct HomeView: View {
                 VStack{
                     HStack{
                         NavigationLink(destination: ProfileView()) {
-                            Image("onboarding_image")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 48, height: 48)
-                                .clipShape(Circle())
+                            ZStack{
+                                Circle()
+                                    .fill(Color.green.gradient)
+                                    .frame(width: 48, height: 48)
+                                
+                                Text(userName.prefix(1).uppercased())
+                                    .font(.system(size: 24, weight: .bold, design: .serif))
+                                    .foregroundColor(.white)
+                            }
                         }
                         .buttonStyle(PlainButtonStyle())
                         
@@ -159,6 +170,7 @@ struct HomeView: View {
                             Text(userName)
                                 .font(.system(size: 18, weight: .medium, design: .serif))
                         }
+                        .padding(.horizontal, 8)
                         
                         Spacer()
                         
@@ -348,9 +360,12 @@ struct HomeView: View {
                         // Method 2 (without chevron)
                         List {
                             ForEach(filteredTransactions) { item in
+                                let title = item.title
+                                let type = item.type
+                                
                                 ExpenseItemCard(
                                     emoji: item.emoji,
-                                    title: item.title,
+                                    title: item.type == "Income" ? type : title,
                                     date: item.date,
                                     amount: String(item.amount),
                                     color: item.color,
@@ -393,7 +408,7 @@ struct HomeView: View {
                         .shadow(color: .black.opacity(0.3), radius: 5, x: 0, y: 3)
                 }
                 .padding()
-                .sheet(isPresented: $expenseBottomSheet) {
+                .fullScreenCover(isPresented: $expenseBottomSheet) {
                     AddExpenseBottomSheetView(itemToEdit: nil)
                 }
                 .sheet(isPresented: $editBottomSheet) {
@@ -437,560 +452,4 @@ extension Date {
     func isInSameMonth(as other: Date) -> Bool {
         Calendar.current.isDate(self, equalTo: other, toGranularity: .month)
     }
-}
-
-struct ExpenseItemCard: View {
-    let emoji: String
-    let title: String
-    let date: Date
-    let amount: String
-    let color: Color
-    let isIncome: Bool
-    
-    private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM dd"
-        return formatter.string(from: date)
-    }
-    
-    var body: some View {
-        HStack {
-            // Left side: Icon + Title
-            HStack(spacing: 12) {
-                Text(emoji)
-                    .font(.system(size: 28))
-                    .frame(width: 40, height: 40)
-                    .background(color.opacity(0.15))
-                    .clipShape(Circle())
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 16, weight: .medium, design: .serif))
-                    Text(formattedDate)
-                        .font(.system(size: 13, weight: .light, design: .serif))
-                        .foregroundColor(.gray)
-                }
-            }
-            
-            Spacer()
-            
-            // Right side: Price
-            HStack(spacing: 4) {
-                Image(systemName: "indianrupeesign")
-                Text(amount)
-                    .font(.system(size: 17, weight: .medium, design: .serif))
-                Image(systemName: isIncome ? "arrow.down.left" : "arrow.up.right")
-                    .font(.system(size: 13))
-            }
-            .foregroundColor(color)
-        }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.gray.opacity(0.1))
-                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 2)
-        )
-    }
-}
-
-
-struct AddExpenseBottomSheetView: View{
-    @Environment(\.dismiss) var expenseBottomSheetDismiss
-    @Environment(\.modelContext) private var context
-    
-    @State private var showToast:Bool = false
-    
-    @State private var userCategories: [UserCategory] = []
-    
-    @State private var showAddCategorySheet: Bool = false
-    
-    @State private var selectedUserCategory: UserCategory? = nil
-    @State private var newCategoryName: String = ""
-    @State private var newCategoryEmoji: String = ""
-
-    
-    // Optional: If provided, we're in edit mode
-    var itemToEdit: HomeView.TransactionItem?
-    
-    @State private var entryType: EntryType = .expense
-    @State private var selectedCategory: CategoryType = .food
-    @State private var price: String = ""
-    @State private var dateValue: Date = Date()
-    @State private var note: String = ""
-    @State private var incomeText: String = ""
-    
-    
-    // Computed property to determine if we're editing
-    private var isEditMode: Bool {
-        itemToEdit != nil
-    }
-    
-    enum EntryType:String, CaseIterable, Identifiable {
-        case expense = "Expense"
-        case income = "Income"
-        
-        var id: String { self.rawValue }
-    }
-    
-    enum CategoryType: String, CaseIterable, Identifiable {
-        case food = "🍔 Food"
-        case movie = "🎬 Movie"
-        case ott = "📺 OTT"
-        case groceries = "🛒 Groceries"
-        case home = "🏠 Home"
-        case transport = "🚌 Transport"
-        case entertainment = "🎉 Entertainment"
-        case drinks = "🍹 Drinks"
-        case shopping = "🛍️ Shopping"
-        case powerBill = "💡 Power Bill"
-        case phone = "📱 Phone"
-        case internet = "🌐 Internet"
-        case fuel = "⛽ Fuel"
-        case others = "🔖 Others"
-        
-        var id: String { self.rawValue }
-    }
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            
-            // Close button pinned at top right
-            HStack {
-                Spacer()
-                Button(action: { expenseBottomSheetDismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .resizable()
-                        .frame(width: 28, height: 28)
-                        .foregroundColor(Color.red)
-                        .padding()
-                }
-            }
-            
-            VStack(spacing:20){
-                if !isEditMode {
-                    Picker("Type", selection: $entryType) {
-                        ForEach(EntryType.allCases) { type in
-                            Text(type.rawValue).tag(type)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                }
-                
-                if entryType == .expense {
-                    VStack(alignment: .leading, spacing: 8) {
-                        
-                        HStack{
-                            Text("Select Category")
-                                .font(.system(size: 16, weight: .regular, design: .serif))
-                            
-                            Spacer()
-                            
-                            // Add new category button
-                            Button(action: {
-                                showAddCategorySheet = true
-                            }) {
-                                Text("+ Add Category")
-                                    .padding(.vertical, 4)
-                                    .padding(.horizontal, 12)
-                                    .font(.system(size: 16, weight: .regular, design: .serif))
-                                    .foregroundColor(Color.white)
-                                    .background(Color.green.gradient)
-                                    .cornerRadius(10)
-                            }
-                            .sheet(isPresented: $showAddCategorySheet) {
-                                ZStack{
-                                    VStack(spacing: 20) {
-                                        
-                                        // Close button pinned at top right
-                                        HStack {
-                                            Spacer()
-                                            Button(action: { showAddCategorySheet = false }) {
-                                                Image(systemName: "xmark.circle.fill")
-                                                    .resizable()
-                                                    .frame(width: 28, height: 28)
-                                                    .foregroundColor(Color.red)
-                                                    .padding()
-                                            }
-                                        }
-                                        VStack(spacing: 20) {
-                                            Text("Add New Category")
-                                                .font(.system(size: 24, weight: .semibold, design: .serif))
-                                            
-                                            VStack(alignment: .leading, spacing: 8) {
-                                                Text("Category Name")
-                                                    .font(.system(size: 16, weight: .regular, design: .serif))
-                                                
-                                                TextField("Enter User Name", text: $newCategoryName)
-                                                    .padding(12)
-                                                    .background(Color.gray.opacity(0.1))
-                                                    .cornerRadius(8)
-                                                    .shadow(radius: 0.5)
-                                                    .font(.system(size: 18, weight: .regular, design: .serif))
-                                            }
-                                            .padding(.horizontal, 4)
-                                            
-                                            VStack(alignment: .leading, spacing: 8) {
-                                                Text("Emoji")
-                                                    .font(.system(size: 16, weight: .regular, design: .serif))
-                                                
-                                                TextField("Emoji", text: $newCategoryEmoji)
-                                                    .padding(12)
-                                                    .background(Color.gray.opacity(0.1))
-                                                    .cornerRadius(8)
-                                                    .shadow(radius: 0.5)
-                                                    .font(.system(size: 18, weight: .regular, design: .serif))
-                                            }
-                                            .padding(.horizontal, 4)
-                                            
-                                            HStack(spacing: 20) {
-                                                
-                                                Button {
-                                                    showAddCategorySheet = false
-                                                    newCategoryName = ""
-                                                    newCategoryEmoji = "🔖"
-                                                } label: {
-                                                    Text("Cancel")
-                                                        .frame(maxWidth: .infinity)
-                                                        .font(.system(size: 18, weight: .medium, design: .serif))
-                                                }
-                                                .padding(.vertical, 8)
-                                                .padding(.horizontal)
-                                                .foregroundColor(.white)
-                                                .background(Color.red.gradient)
-                                                .cornerRadius(10)
-                                                
-                                                Button {
-                                                    addNewCategory()
-                                                } label: {
-                                                    Text("Add")
-                                                        .frame(maxWidth: .infinity)
-                                                        .font(.system(size: 18, weight: .medium, design: .serif))
-                                                }
-                                                .padding(.vertical, 8)
-                                                .padding(.horizontal)
-                                                .foregroundColor(.white)
-                                                .background(Color.green.gradient)
-                                                .cornerRadius(10)
-                                            }
-                                            .padding(.top, 10)
-                                            
-                                            Spacer()
-                                        }
-                                        .padding()
-                                        
-                                        if showToast {
-                                            VStack {
-                                                Spacer()
-                                                Text("⚠️ Fill Both Fields!")
-                                                    .font(.body)
-                                                    .padding(.horizontal, 20)
-                                                    .padding(.vertical, 12)
-                                                    .background(Color.black.opacity(0.85))
-                                                    .foregroundColor(.white)
-                                                    .cornerRadius(10)
-                                                    .shadow(radius: 4)
-                                                    .padding(.bottom, 50)
-                                                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                                            }
-                                            .animation(.easeInOut, value: showToast)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.vertical, 8)
-                        
-                        
-                        
-                        ScrollView(.vertical, showsIndicators: true) {
-                            let columns = [GridItem(.flexible()), GridItem(.flexible())] // 2 columns
-                            LazyVGrid(columns: columns, spacing: 12) {
-                                ForEach(CategoryType.allCases) { category in
-                                    Button(action: {
-                                        selectedCategory = category
-                                        selectedUserCategory = nil
-                                    }) {
-                                        Text(category.rawValue)
-                                            .padding(.vertical, 8)
-                                            .padding(.horizontal, 12)
-                                            .frame(maxWidth: .infinity) // full width in grid cell
-                                            .foregroundColor(selectedCategory == category ? Color.white : Color.blue)
-                                            .background(selectedCategory == category ? Color.green.opacity(0.8) : Color.gray.opacity(0.1))
-                                            .cornerRadius(12)
-                                    }
-                                }
-                                
-                                // User-added categories
-                                ForEach(userCategories) { category in
-                                    Button(action: {
-                                        selectedUserCategory = category
-                                        selectedCategory = .others
-                                    }) {
-                                        Text("\(category.emoji) \(category.name)")
-                                            .padding(.vertical, 8)
-                                            .padding(.horizontal, 12)
-                                            .frame(maxWidth: .infinity)
-                                            .foregroundColor(selectedUserCategory?.id == category.id ? Color.white : Color.blue)
-                                            .background(selectedUserCategory?.id == category.id ? Color.green.opacity(0.8) : Color.gray.opacity(0.1))
-                                            .cornerRadius(12)
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 4)
-                        }
-                        .frame(maxHeight: 200)
-                        .disabled(isEditMode)
-                        
-                    }
-                    
-                    // Price
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Enter Price")
-                            .font(.system(size: 16, weight: .regular, design: .serif))
-                        
-                        TextField("e.g., 100", text: $price)
-                            .keyboardType(.decimalPad)
-                            .padding(.all, 12)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(8)
-                            .shadow(radius: 0.5)
-                            .font(.system(size: 18, weight: .regular, design: .serif))
-                    }
-                    
-                    
-                    DatePicker(selection: $dateValue, label: {
-                        Text("Due Date")
-                            .font(.system(size: 16, weight: .medium, design: .serif))
-                        
-                    })
-                    .padding(.all, 4)
-                    
-                    // Note
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Note")
-                            .font(.system(size: 16, weight: .regular, design: .serif))
-                        
-                        TextEditor(text: $note)
-                            .frame(height: 50)
-                            .padding(8)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(8)
-                            .shadow(radius: 0.5)
-                            .font(.system(size: 18, weight: .regular, design: .serif))
-                            .scrollContentBackground(.hidden)
-                    }
-                } else if entryType == .income{
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Enter Income")
-                            .font(.system(size: 16, weight: .regular, design: .serif))
-                        
-                        TextField("e.g., 500", text: $incomeText)
-                            .padding(.all, 12)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(8)
-                            .shadow(radius: 0.5)
-                            .font(.system(size: 18, weight: .regular, design: .serif))
-                    }
-                    
-                    DatePicker(selection: $dateValue, label: {
-                        Text("Due Date")
-                            .font(.system(size: 16, weight: .medium, design: .serif))
-                        
-                    })
-                    .padding(.all, 4)
-                    
-                    // Note
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Note")
-                            .font(.system(size: 16, weight: .regular, design: .serif))
-                        
-                        TextEditor(text: $note)
-                            .frame(height: 50)
-                            .padding(8)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(8)
-                            .shadow(radius: 0.5)
-                            .font(.system(size: 18, weight: .regular, design: .serif))
-                            .scrollContentBackground(.hidden)
-                    }
-                }
-                
-                
-                Button{
-                    if isEditMode {
-                        // Update existing item
-                        updateItem()
-                    } else {
-                        // Add new item
-                        addNewItem()
-                    }
-                    expenseBottomSheetDismiss()
-                } label: {
-                    Text(isEditMode ? "Save Changes" : "Add")
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .font(.system(size: 18, weight: .medium, design: .serif))
-                }
-                .padding(.vertical, 10)
-                .padding(.horizontal)
-                .foregroundColor(.white)
-                .background(Color.green.gradient)
-                .cornerRadius(12)
-                Spacer()
-            }
-            .padding()
-        }
-        .onAppear {
-            if let item = itemToEdit {
-                switch item {
-                case .expense(let expense):
-                    entryType = .expense
-                    price = String(expense.price)
-                    dateValue = expense.date
-                    note = expense.note
-                    // Set category based on emoji and name
-                    if let category = CategoryType.allCases.first(where: { $0.rawValue == "\(expense.emoji) \(expense.name)" }) {
-                        selectedCategory = category
-                    }
-                case .income(let income):
-                    entryType = .income
-                    incomeText = String(income.income)
-                    dateValue = income.date
-                    note = income.note
-                }
-            }
-            
-            UserCategoryManager.shared.fetchCategories()
-            userCategories = UserCategoryManager.shared.categories
-        }
-    }
-    
-    // MARK: - Category Management
-        private func addNewCategory() {
-            let trimmedName = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
-            let trimmedEmoji = newCategoryEmoji.trimmingCharacters(in: .whitespacesAndNewlines)
-            
-            // Check if both fields are filled
-            guard !trimmedName.isEmpty, !trimmedEmoji.isEmpty else {
-                withAnimation {
-                    showToast = true
-                }
-                
-                // Hide toast after 2 seconds
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    withAnimation {
-                        showToast = false
-                    }
-                }
-                
-                print("❌ Both fields are required.")
-                return
-            }
-            
-            print("🟢 Attempting to add new category:")
-            print("🟢 Name: \(newCategoryName)")
-            print("🟢 Emoji: \(newCategoryEmoji)")
-            print("🟢 Current categories before adding: \(userCategories.count)")
-            
-            let newCategory = UserCategory(name: trimmedName, emoji: trimmedEmoji)
-            
-            let categoryContext = UserCategoryManager.shared.container.mainContext
-            categoryContext.insert(newCategory)
-            
-            do {
-                try categoryContext.save()
-                
-                print("✅ Category saved successfully!")
-                print("✅ New category ID: \(newCategory.id)")
-                
-                UserCategoryManager.shared.fetchCategories()
-                userCategories = UserCategoryManager.shared.categories
-                print("✅ Total categories after save: \(userCategories.count)")
-
-                
-                // Verify the category was added
-                userCategories.forEach { category in
-                    print("✅ Available category: \(category.emoji) \(category.name)")
-                }
-                
-                selectedUserCategory = newCategory
-                newCategoryName = ""
-                newCategoryEmoji = ""
-                showAddCategorySheet = false
-                
-            } catch {
-                print("❌ Failed to save category: \(error.localizedDescription)")
-                print("❌ Error details: \(error)")
-            }
-        }
-    
-    
-    // Separate function to add new item
-    private func addNewItem() {
-        if entryType == .expense {
-            guard let priceValue = Double(price) else { return }
-            
-            let (emojiPart, namePart) = selectedUserCategory != nil ?
-            (selectedUserCategory!.emoji, selectedUserCategory!.name) :
-            (selectedCategory.rawValue.split(separator: " ").first.map(String.init) ?? "💸",
-             selectedCategory.rawValue.split(separator: " ").dropFirst().first.map(String.init) ?? "Other")
-            
-            let newExpense = Expense(
-                emoji: emojiPart,
-                name: namePart,
-                price: priceValue,
-                date: dateValue,
-                note: note
-            )
-            context.insert(newExpense)
-        } else {
-            guard let incomeValue = Double(incomeText) else { return }
-            
-            let newIncome = Income(
-                income: incomeValue,
-                date: dateValue,
-                note: note
-            )
-            context.insert(newIncome)
-        }
-        
-        do {
-            try context.save()
-            print("✅ Data saved successfully!")
-        } catch {
-            print("❌ Failed to save: \(error.localizedDescription)")
-        }
-    }
-    
-    // Separate function to update existing item
-    private func updateItem() {
-        guard let item = itemToEdit else { return }
-        
-        switch item {
-        case .expense(let expense):
-            if let priceValue = Double(price) {
-                expense.price = priceValue
-                expense.date = dateValue
-                expense.note = note
-            }
-        case .income(let income):
-            if let incomeValue = Double(incomeText) {
-                income.income = incomeValue
-                income.date = dateValue
-                income.note = note
-            }
-        }
-        
-        do {
-            try context.save()
-            print("✅ Updated successfully!")
-        } catch {
-            print("❌ Failed to update: \(error.localizedDescription)")
-        }
-    }
-}
-
-#Preview{
-    HomeView()
 }

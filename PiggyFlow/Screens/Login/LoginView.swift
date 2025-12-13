@@ -61,6 +61,8 @@ struct LoginView: View {
                 setupUserProfile()
             }
         }
+        .navigationTitle("Sign In")
+        .navigationBarTitleDisplayMode(.inline)
     }
     
     private func setupUserProfile() {
