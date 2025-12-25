@@ -365,7 +365,7 @@ struct HomeView: View {
                                 
                                 ExpenseItemCard(
                                     emoji: item.emoji,
-                                    title: item.type == "Income" ? type : title,
+                                    title: title.isEmpty ? type : title,
                                     date: item.date,
                                     amount: String(item.amount),
                                     color: item.color,

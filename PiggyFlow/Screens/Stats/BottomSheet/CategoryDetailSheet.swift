@@ -154,7 +154,7 @@ struct CategoryDetailSheet: View {
                             HStack {
                                 HStack {
                                     
-                                    Text(inc.emoji)
+                                    Text(inc.emoji.isEmpty ? inc.name.prefix(1).uppercased() : inc.emoji)
                                         .font(.system(size: 28))
                                         .frame(width: 40, height: 40)
                                         .background(Color.green.opacity(0.2))
