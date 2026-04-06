@@ -1,17 +1,15 @@
 # 💰 PiggyFlow - Budget Tracker App
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/955a363d-5991-4e3d-b86a-7f6320c44174" width="24%" />
-  <img src="https://github.com/user-attachments/assets/20f2c761-8e8f-48d4-a7ff-8ea3dc9598f4" width="24%" />
-  <img src="https://github.com/user-attachments/assets/afa9d29b-942b-44ee-b949-89dd4bdabb2a" width="24%" />
-  <img src="https://github.com/user-attachments/assets/63ef7eb2-df1f-49a4-920c-ee0cc7fe307a" width="24%" />
+  <img src="https://github.com/user-attachments/assets/d238f0f7-3d1e-450a-82e6-bb42ab58a374" width="24%" />
+  <img src="https://github.com/user-attachments/assets/64754e98-437c-41f7-9370-38ca1c680c5c" width="24%" />
+  <img src="https://github.com/user-attachments/assets/bb70eeaa-4d0d-43b1-8008-4fddc45f0eb2" width="24%" />
 </p>
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/f2eba88a-5759-4fd2-a69f-057d6b35c719" width="24%" />
-  <img src="https://github.com/user-attachments/assets/34b9a9e9-2aa4-4337-82d8-f483ef6870ed" width="24%" />
-  <img src="https://github.com/user-attachments/assets/d4792ea6-e7a6-4325-9642-84432880dba9" width="24%" />
-  <img src="https://github.com/user-attachments/assets/a072ef7b-a5ba-473b-9b64-95d99d90914b" width="24%" />
+  <img src="https://github.com/user-attachments/assets/49bd007f-b0e2-46b8-847d-717a582e9a51" width="24%" />
+  <img src="https://github.com/user-attachments/assets/3e055b0a-9bce-48fa-9037-02aab27f41ab" width="24%" />
+  <img src="https://github.com/user-attachments/assets/4481a717-87c6-45bb-83e3-f204968c5749" width="24%" />
 </p>
 
 A beautifully designed **iOS Budget Tracker App** built with **SwiftUI** and **SwiftData**, helping users easily track their income, expenses, and spending trends — all synced securely via **iCloud**.  
