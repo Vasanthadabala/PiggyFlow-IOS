@@ -3,7 +3,7 @@ import SwiftData
 
 @Model
 final class Expense {
-    var id: String = UUID().uuidString  // ✅ default value fixes CloudKit issue
+    var id: String = UUID().uuidString
     var type:String = " "
     var emoji: String = ""
     var name: String = ""
@@ -23,7 +23,7 @@ final class Expense {
 
 @Model
 final class Income {
-    var id: String = UUID().uuidString  // ✅ default value fixes CloudKit issue
+    var id: String = UUID().uuidString
     var type:String = " "
     var emoji: String = ""
     var name: String = ""
@@ -50,5 +50,32 @@ final class UserCategory {
     init(name: String, emoji: String = "") {
         self.name = name
         self.emoji = emoji
+    }
+}
+
+@Model
+final class TrackerRecord {
+    var id: String = UUID().uuidString
+    var type: String = "subscription" // subscription | emi
+    var name: String = ""
+    var subType: String = "monthly" // monthly | yearly
+    var amount: Double = 0
+    var dueDate: Date = Date()
+    var logoUrl: String = ""
+
+    init(
+        type: String = "subscription",
+        name: String = "",
+        subType: String = "monthly",
+        amount: Double = 0,
+        dueDate: Date = Date(),
+        logoUrl: String = ""
+    ) {
+        self.type = type
+        self.name = name
+        self.subType = subType
+        self.amount = amount
+        self.dueDate = dueDate
+        self.logoUrl = logoUrl
     }
 }
