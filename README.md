@@ -12,14 +12,14 @@
   <img src="https://github.com/user-attachments/assets/4481a717-87c6-45bb-83e3-f204968c5749" width="24%" />
 </p>
 
-A beautifully designed **iOS Budget Tracker App** built with **SwiftUI** and **SwiftData**, helping users easily track their income, expenses, and spending trends — all synced securely via **iCloud**.  
+A beautifully designed **iOS Budget Tracker App** built with **SwiftUI** and **SwiftData**, helping users easily track their income, expenses, and spending trends — all synced securely via **Cloud**.  
 
 ---
 
 ## 🚀 Overview
 
 The Budget Tracker App allows users to manage their financial activities smoothly with a clean, modern design.
-It supports charts, category insights, detailed expense tracking, and secure backup/restore through iCloud
+It supports charts, category insights, detailed expense tracking, and secure backup/restore through Cloud
 
 ---
 
@@ -62,8 +62,8 @@ It supports charts, category insights, detailed expense tracking, and secure bac
 
 
 ### ☁️ Cloud Sync & Authentication
-- Fully integrated Apple Sign-In for secure Login
-- iCloud Sync for automatic cross-device synchronization.
+- Fully integrated Apple Sign-In and Google Sign-In for secure Login
+- Cloud Sync for automatic cross-device synchronization.
 
 ### 🔔 Notifications Panel
 - Stay informed with a built-in notifications section for alerts and updates.
@@ -77,8 +77,8 @@ It supports charts, category insights, detailed expense tracking, and secure bac
 | Language | Swift |
 | Framework | SwiftUI |
 | Database | SwiftData |
-| Cloud Sync | iCloud |
-| Authentication | Sign in with Apple |
+| Cloud Sync | Firebase FireStore |
+| Authentication | Firebase Auth |
 | Charts | Swift Charts |
 | Document Scanning | VisionKit / DataScanner API |
 
