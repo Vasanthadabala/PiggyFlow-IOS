@@ -8,12 +8,12 @@ struct MainTabView: View {
                 HomeView()
             }
             
-            Tab("Stats", systemImage: "chart.xyaxis.line"){
-                StatsView()
+            Tab("Tracker", systemImage: "creditcard"){
+                TrackerView()
             }
             
-            Tab("Scan", systemImage: "qrcode.viewfinder"){
-                ScanView()
+            Tab("Stats", systemImage: "chart.xyaxis.line"){
+                StatsView()
             }
             
             Tab("Settings", systemImage: "gearshape.fill"){

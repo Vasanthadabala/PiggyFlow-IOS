@@ -91,6 +91,7 @@ struct ScanView: View {
         scanResults = parsedItems.map { "\($0.item): ₹\($0.price)" }
 
         // Save parsed items to SwiftData
+        var newExpenses: [Expense] = []
         for parsed in parsedItems {
             let newExpense = Expense(
                 type:"Expense",
@@ -101,9 +102,15 @@ struct ScanView: View {
                 note: "Scanned from bill"
             )
             context.insert(newExpense)
+            newExpenses.append(newExpense)
         }
 
-        try? context.save()
+        do {
+            try context.save()
+            newExpenses.forEach { CloudSyncManager.shared.queueExpenseUpsert($0) }
+        } catch {
+            print("❌ Failed to save scanned expenses: \(error.localizedDescription)")
+        }
         isProcessing = false
         alertMessage = "Added \(parsedItems.count) expenses from your bill!"
     }
