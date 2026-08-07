@@ -1,0 +1,21 @@
+# Xcode build output & caches — fully regenerable, never commit
+build/
+DerivedData/
+*.moved-aside
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.xcuserstate
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# CocoaPods (if ever introduced)
+Pods/
+
+# macOS
+.DS_Store
+
+# Xcode debug artifacts
+*.dSYM.zip
+*.dSYM
