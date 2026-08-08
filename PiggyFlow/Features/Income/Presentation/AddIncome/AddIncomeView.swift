@@ -31,7 +31,7 @@ struct AddIncomeView: View {
     @State private var source: Option = IncomeCatalog.sources.first ?? Option(id: "Income", title: "Income", icon: "banknote.fill")
     @State private var date: Date = Date()
     @State private var paymentMethod: Option?
-    @State private var account: Option = IncomeCatalog.accounts[0]
+    @State private var account: Option = IncomeCatalog.accounts()[0]
     @State private var payer: String = ""
     @State private var incomeType: Option?
     @State private var descriptionText: String = ""
@@ -532,7 +532,7 @@ struct AddIncomeView: View {
         case .account:
             IncomeOptionPickerSheet(
                 title: "Account",
-                options: IncomeCatalog.accounts,
+                options: IncomeCatalog.accounts(),
                 selectedID: account.id
             ) { account = $0 }
         case .incomeType:
@@ -650,9 +650,8 @@ extension AddIncomeView {
 /// The option lists behind the dropdowns.
 ///
 /// Sources are derived from `CategoryType.incomeDefaultCategories` so a source saved here is
-/// the same string the home list, detail screen and edit sheet already recognise. Accounts and
-/// payment methods mirror the demo data in `AccountsView`; once accounts are persisted rather
-/// than hardcoded there, both lists should read from the store instead.
+/// the same string the home list, detail screen and edit sheet already recognise. Accounts read
+/// from the real `AccountManager` store the user builds up in `AccountsView`.
 enum IncomeCatalog {
 
     private static let sourceIcons: [AddIncomeView.Option.ID: String] = [
@@ -699,12 +698,16 @@ enum IncomeCatalog {
         .init(id: "Cheque", title: "Cheque", icon: "doc.text.fill", subtitle: "Deposited by cheque")
     ]
 
-    static let accounts: [AddIncomeView.Option] = [
-        .init(id: "Personal Account", title: "Personal Account", icon: AppIcon.Finance.wallet),
-        .init(id: "Business Account", title: "Business Account", icon: "briefcase.fill"),
-        .init(id: "Savings Account", title: "Savings Account", icon: AppIcon.Finance.bank),
-        .init(id: "Joint Account", title: "Joint Account", icon: "person.2.fill")
-    ]
+    /// Real accounts the user has added — falls back to a single placeholder so `[0]`-indexing
+    /// call sites never crash before the user has added their first real account.
+    static func accounts() -> [AddIncomeView.Option] {
+        let real = AccountManager.shared.accounts.map { account in
+            AddIncomeView.Option(id: account.name, title: account.name, icon: account.iconName, subtitle: account.subType)
+        }
+        return real.isEmpty
+            ? [AddIncomeView.Option(id: "Cash", title: "Cash", icon: AppIcon.Finance.cash, subtitle: "Add an account to see it here")]
+            : real
+    }
 
     static let incomeTypes: [AddIncomeView.Option] = [
         .init(id: "Monthly Salary", title: "Monthly Salary", icon: "calendar", subtitle: "Repeats every month"),

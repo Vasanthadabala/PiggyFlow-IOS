@@ -295,7 +295,10 @@ struct AddTrackerView: View {
             amount: form.storedAmount(for: kind),
             dueDate: form.dueDate(for: kind),
             logoUrl: form.icon,
-            isPaid: false
+            isPaid: false,
+            category: form.storedCategory(for: kind),
+            currentAmount: kind == .goal ? form.currentAmountValue : 0,
+            notes: form.notes
         )
 
         context.insert(record)

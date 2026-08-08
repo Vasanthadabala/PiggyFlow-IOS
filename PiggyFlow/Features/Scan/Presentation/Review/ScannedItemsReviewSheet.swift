@@ -11,6 +11,9 @@ struct ScannedItemsReviewSheet: View {
     @Environment(\.modelContext) private var context
 
     @State var items: [ParsedItem]
+    /// The photo(s) that produced `items` — every expense saved from this batch shares the
+    /// one bill they were all read from as its receipt.
+    var images: [UIImage] = []
     /// Called with the number of expenses saved, so the caller can confirm.
     var onSaved: (Int) -> Void
 
@@ -175,6 +178,10 @@ struct ScannedItemsReviewSheet: View {
     // MARK: - Persistence
 
     private func save() {
+        // One receipt image backs every expense pulled from it — saved once, referenced by
+        // filename, rather than duplicated per item.
+        let receiptFileName = images.first.flatMap(ReceiptStorage.save) ?? ""
+
         var saved = 0
         for item in items {
             let name = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -186,7 +193,9 @@ struct ScannedItemsReviewSheet: View {
                 name: name,
                 price: amount,
                 date: Date(),
-                note: "Scanned from receipt"
+                note: "Scanned from receipt",
+                source: "receipt",
+                receiptFileName: receiptFileName
             )
             context.insert(expense)
             CloudSyncManager.shared.queueExpenseUpsert(expense)

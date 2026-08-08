@@ -32,6 +32,13 @@ struct CalculateExpenseSummaryUseCase {
     // MARK: - Aggregation
 
     private func summarize(expenses: [Expense], incomes: [Income]) -> ExpenseSummary {
+        Self.summary(expenses: expenses, incomes: incomes)
+    }
+
+    /// Same aggregation as `execute()`/`execute(in:)`, but works directly off arrays a view's
+    /// `@Query` already holds — no `ModelContext` round-trip, so it stays reactive to `@Query`
+    /// changes instead of needing a manual refetch through the repository.
+    static func summary(expenses: [Expense], incomes: [Income]) -> ExpenseSummary {
         let totalSpent = expenses.reduce(0) { $0 + $1.price }
         let totalIncome = incomes.reduce(0) { $0 + $1.income }
 
@@ -39,12 +46,12 @@ struct CalculateExpenseSummaryUseCase {
             totalSpent: totalSpent,
             totalIncome: totalIncome,
             transactionCount: expenses.count,
-            categoryBreakdown: breakdown(of: expenses, total: totalSpent)
+            categoryBreakdown: categoryBreakdown(of: expenses, total: totalSpent)
         )
     }
 
     /// Groups by category, largest first.
-    private func breakdown(of expenses: [Expense], total: Double) -> [CategoryTotal] {
+    static func categoryBreakdown(of expenses: [Expense], total: Double) -> [CategoryTotal] {
         guard total > 0 else { return [] }
 
         let grouped = Dictionary(grouping: expenses) { expense -> String in

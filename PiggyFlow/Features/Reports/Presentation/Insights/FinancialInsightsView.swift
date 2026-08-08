@@ -38,18 +38,50 @@ struct FinancialInsightsView: View {
     }
 
     private var totalExpenses: Double {
-        let actual = filteredExpenses.reduce(0) { $0 + $1.price }
-        return actual > 0 ? actual : 120_440
+        filteredExpenses.reduce(0) { $0 + $1.price }
     }
 
     private var totalIncome: Double {
-        let actual = incomes.reduce(0) { $0 + $1.income }
-        return actual > 0 ? actual : 245_000
+        incomes.reduce(0) { $0 + $1.income }
     }
 
     private var savingsRate: Double {
-        guard totalIncome > 0 else { return 50.7 }
+        guard totalIncome > 0 else { return 0 }
         return max(0, min(100, ((totalIncome - totalExpenses) / totalIncome) * 100))
+    }
+
+    private var monthOverMonthChange: Double? {
+        SpendingAggregates.monthOverMonthChange(in: expenses)
+    }
+
+    private var transactionCountChange: Int {
+        let calendar = Calendar.current
+        guard let lastMonth = calendar.date(byAdding: .month, value: -1, to: Date()) else { return 0 }
+        let thisMonthCount = expenses.filter { calendar.isDate($0.date, equalTo: Date(), toGranularity: .month) }.count
+        let lastMonthCount = expenses.filter { calendar.isDate($0.date, equalTo: lastMonth, toGranularity: .month) }.count
+        return thisMonthCount - lastMonthCount
+    }
+
+    /// The category whose spend increased the most vs. last month — `nil` when nothing rose,
+    /// so the fourth insight card can be skipped rather than forcing a claim.
+    private var risingCategory: (name: String, change: Double)? {
+        let categories = Set(filteredExpenses.map { $0.type.isEmpty ? "General" : $0.type })
+        return categories
+            .compactMap { category -> (String, Double)? in
+                guard let change = SpendingAggregates.categoryMonthOverMonthChange(in: expenses, category: category), change > 0 else { return nil }
+                return (category, change)
+            }
+            .max { $0.1 < $1.1 }
+    }
+
+    private var highestExpense: Expense? { filteredExpenses.max { $0.price < $1.price } }
+    private var lowestExpense: Expense? { filteredExpenses.min { $0.price < $1.price } }
+
+    private var moneySaved: Double { max(0, totalIncome - totalExpenses) }
+
+    private var dailyAverageSpend: Double {
+        let daysElapsed = Calendar.current.component(.day, from: Date())
+        return daysElapsed > 0 ? totalExpenses / Double(daysElapsed) : 0
     }
 
     struct CategorySlice: Identifiable {
@@ -57,60 +89,32 @@ struct FinancialInsightsView: View {
         let name: String; let amount: Double; let percent: Double; let color: Color
     }
 
+    private static let categoryPalette: [Color] = [
+        Color.appGreen,
+        Color(red: 134/255, green: 239/255, blue: 172/255),
+        Color.appWarningAmber,
+        Color.appTeal,
+        Color(red: 168/255, green: 85/255, blue: 247/255),
+        Color(red: 59/255, green: 130/255, blue: 246/255),
+        Color.gray.opacity(0.5)
+    ]
+
     private var categorySlices: [CategorySlice] {
-        let palette: [Color] = [
-            Color.appGreen,
-            Color(red: 134/255, green: 239/255, blue: 172/255),
-            Color.appWarningAmber,
-            Color.appTeal,
-            Color(red: 168/255, green: 85/255, blue: 247/255),
-            Color(red: 59/255, green: 130/255, blue: 246/255),
-            Color.gray.opacity(0.5)
-        ]
-        if !filteredExpenses.isEmpty {
-            var dict: [String: Double] = [:]
-            for e in filteredExpenses { dict[e.type.isEmpty ? "General" : e.type, default: 0] += e.price }
-            let total = dict.values.reduce(0, +)
-            return dict.enumerated().map { idx, pair in
-                CategorySlice(name: pair.key, amount: pair.value, percent: total > 0 ? (pair.value / total) * 100 : 0, color: palette[idx % palette.count])
-            }.sorted { $0.amount > $1.amount }
+        let breakdown = CalculateExpenseSummaryUseCase.categoryBreakdown(of: filteredExpenses, total: totalExpenses)
+        return breakdown.enumerated().map { idx, total in
+            CategorySlice(name: total.name, amount: total.amount, percent: total.percentage, color: Self.categoryPalette[idx % Self.categoryPalette.count])
         }
-        return [
-            CategorySlice(name: "Food & Dining",  amount: 32_450, percent: 26.9, color: palette[0]),
-            CategorySlice(name: "Shopping",        amount: 22_300, percent: 18.5, color: palette[1]),
-            CategorySlice(name: "Fuel",            amount: 18_650, percent: 15.5, color: palette[2]),
-            CategorySlice(name: "Utilities",       amount: 12_450, percent: 10.3, color: palette[3]),
-            CategorySlice(name: "Entertainment",   amount: 8_900,  percent: 7.4,  color: palette[4]),
-            CategorySlice(name: "Travel",          amount: 7_850,  percent: 6.5,  color: palette[5]),
-            CategorySlice(name: "Others",          amount: 17_840, percent: 14.9, color: palette[6])
-        ]
     }
 
-    struct MerchantItem: Identifiable {
-        var id: String { name }
-        let name: String; let amount: Double; let percent: Double; let icon: String
+    private typealias MerchantItem = SpendingAggregates.MerchantTotal
+    private var topMerchants: [MerchantItem] {
+        SpendingAggregates.topMerchants(in: filteredExpenses)
     }
 
-    private let topMerchants: [MerchantItem] = [
-        MerchantItem(name: "Amazon",     amount: 12_450, percent: 10.3, icon: "cart.fill"),
-        MerchantItem(name: "Zomato",     amount: 7_890,  percent: 6.5,  icon: "fork.knife"),
-        MerchantItem(name: "Reliance BP",amount: 6_250,  percent: 5.2,  icon: "fuelpump.fill"),
-        MerchantItem(name: "Swiggy",     amount: 5_430,  percent: 4.5,  icon: "bag.fill"),
-        MerchantItem(name: "DMart",      amount: 4_980,  percent: 4.1,  icon: "storefront.fill")
-    ]
-
-    struct TrendPoint: Identifiable {
-        var id: String { label }
-        let label: String; let value: Double
+    private typealias TrendPoint = SpendingAggregates.WeeklyTotal
+    private var trendPoints: [TrendPoint] {
+        SpendingAggregates.weeklyTotals(expenses: filteredExpenses, incomes: [], month: Date())
     }
-
-    private let trendPoints: [TrendPoint] = [
-        TrendPoint(label: "1 May",  value: 2_100),
-        TrendPoint(label: "8 May",  value: 3_400),
-        TrendPoint(label: "15 May", value: 4_520),
-        TrendPoint(label: "22 May", value: 2_800),
-        TrendPoint(label: "31 May", value: 3_200)
-    ]
 
     // MARK: - Body
 
@@ -217,13 +221,15 @@ struct FinancialInsightsView: View {
                 Text("You've spent ₹\(formatAmount(totalExpenses)) this month")
                     .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.down.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.appGreen)
-                    Text("That's 8.5% less than last month.")
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
+                if let monthOverMonthChange {
+                    HStack(spacing: 4) {
+                        Image(systemName: monthOverMonthChange <= 0 ? "arrow.down.right" : "arrow.up.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.appGreen)
+                        Text("That's \(String(format: "%.1f", abs(monthOverMonthChange)))% \(monthOverMonthChange <= 0 ? "less" : "more") than last month.")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
 
@@ -238,6 +244,58 @@ struct FinancialInsightsView: View {
 
     // MARK: - Key Insights Section
 
+    private struct KeyInsight: Identifiable {
+        let id = UUID()
+        let icon: String
+        let color: Color
+        let boldText: String
+        let description: String
+    }
+
+    /// Every card here is derivable-or-absent — nothing is shown unless there's a real
+    /// comparison behind it (a prior month to compare against, an actual top category, etc.).
+    private var keyInsightCards: [KeyInsight] {
+        var cards: [KeyInsight] = []
+
+        if let change = monthOverMonthChange {
+            cards.append(KeyInsight(
+                icon: change <= 0 ? "arrow.down.circle.fill" : "arrow.up.circle.fill",
+                color: .appGreen,
+                boldText: "\(String(format: "%.1f", abs(change)))% \(change <= 0 ? "less" : "more")",
+                description: "than last month"
+            ))
+        }
+
+        if let top = categorySlices.first {
+            cards.append(KeyInsight(
+                icon: "exclamationmark.circle.fill",
+                color: .appWarningAmber,
+                boldText: top.name,
+                description: "is your highest expense category"
+            ))
+        }
+
+        if transactionCountChange != 0 {
+            cards.append(KeyInsight(
+                icon: "calendar.badge.plus",
+                color: .appIndigo,
+                boldText: "\(abs(transactionCountChange)) \(transactionCountChange > 0 ? "more" : "fewer")",
+                description: "transactions than last month"
+            ))
+        }
+
+        if let rising = risingCategory {
+            cards.append(KeyInsight(
+                icon: "bolt.fill",
+                color: Color(red: 59/255, green: 130/255, blue: 246/255),
+                boldText: "\(String(format: "%.0f", rising.change))%",
+                description: "\(rising.name) spending increased by"
+            ))
+        }
+
+        return cards
+    }
+
     private var keyInsightsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -250,59 +308,34 @@ struct FinancialInsightsView: View {
                         .foregroundColor(.primary)
                 }
                 Spacer()
-                Button { } label: {
-                    HStack(spacing: 2) {
-                        Text("4 New Insights")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundColor(.appGreen)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.appGreen)
-                    }
+                if !keyInsightCards.isEmpty {
+                    Text("\(keyInsightCards.count) Insight\(keyInsightCards.count == 1 ? "" : "s")")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(.appGreen)
                 }
-                .buttonStyle(.plain)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    keyInsightCard(
-                        icon: "arrow.down.circle.fill",
-                        iconColor: Color.appGreen,
-                        iconBg: Color.appGreen.opacity(0.12),
-                        boldText: "8.5% less",
-                        boldColor: Color.appGreen,
-                        description: "than last month",
-                        accentLineColor: Color.appGreen
-                    )
-                    keyInsightCard(
-                        icon: "exclamationmark.circle.fill",
-                        iconColor: Color.appWarningAmber,
-                        iconBg: Color.appWarningAmber.opacity(0.12),
-                        boldText: "Food & Dining",
-                        boldColor: Color.appWarningAmber,
-                        description: "is your highest expense category",
-                        accentLineColor: Color.appWarningAmber
-                    )
-                    keyInsightCard(
-                        icon: "calendar.badge.plus",
-                        iconColor: Color.appIndigo,
-                        iconBg: Color.appIndigo.opacity(0.12),
-                        boldText: "12 more",
-                        boldColor: Color.appIndigo,
-                        description: "transactions than last month",
-                        accentLineColor: Color.appIndigo
-                    )
-                    keyInsightCard(
-                        icon: "bolt.fill",
-                        iconColor: Color(red: 59/255, green: 130/255, blue: 246/255),
-                        iconBg: Color(red: 59/255, green: 130/255, blue: 246/255).opacity(0.12),
-                        boldText: "18%",
-                        boldColor: Color(red: 59/255, green: 130/255, blue: 246/255),
-                        description: "Utilities spending increased by",
-                        accentLineColor: Color(red: 59/255, green: 130/255, blue: 246/255)
-                    )
+            if keyInsightCards.isEmpty {
+                Text("Add a few more transactions to unlock insights here.")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(keyInsightCards) { card in
+                            keyInsightCard(
+                                icon: card.icon,
+                                iconColor: card.color,
+                                iconBg: card.color.opacity(0.12),
+                                boldText: card.boldText,
+                                boldColor: card.color,
+                                description: card.description,
+                                accentLineColor: card.color
+                            )
+                        }
+                    }
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 2)
             }
         }
     }
@@ -448,35 +481,41 @@ struct FinancialInsightsView: View {
                     .buttonStyle(.plain)
                 }
 
-                VStack(spacing: 10) {
-                    ForEach(topMerchants) { m in
-                        HStack(spacing: 8) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.appGreen.opacity(0.10))
-                                    .frame(width: 32, height: 32)
-                                Image(systemName: m.icon)
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundColor(.appGreen)
-                            }
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(m.name)
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
-                                    .lineLimit(1)
-                                    // This column is roughly half the screen's width minus an
-                                    // icon and a percent label — even a name as ordinary as
-                                    // "Reliance BP" truncated to "Relianc…" with no shrink
-                                    // allowance at all.
-                                    .minimumScaleFactor(0.75)
-                                Text("₹\(formatAmountShort(m.amount))")
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                if topMerchants.isEmpty {
+                    Text("No merchant spending yet")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(topMerchants) { m in
+                            HStack(spacing: 8) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.appGreen.opacity(0.10))
+                                        .frame(width: 32, height: 32)
+                                    Image(systemName: "storefront.fill")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(.appGreen)
+                                }
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(m.name)
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+                                        // This column is roughly half the screen's width minus an
+                                        // icon and a percent label — even a name as ordinary as
+                                        // "Reliance BP" truncated to "Relianc…" with no shrink
+                                        // allowance at all.
+                                        .minimumScaleFactor(0.75)
+                                    Text("₹\(formatAmountShort(m.amount))")
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Text("\(String(format: "%.1f", m.percentage))%")
+                                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
                                     .foregroundColor(.secondary)
                             }
-                            Spacer()
-                            Text("\(String(format: "%.1f", m.percent))%")
-                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                                .foregroundColor(.secondary)
                         }
                     }
                 }
@@ -520,64 +559,74 @@ struct FinancialInsightsView: View {
                     Text("Daily average this month")
                         .font(.system(size: 10.5, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
-                    Text("₹3,885")
+                    Text("₹\(formatAmountShort(dailyAverageSpend))")
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
                 }
 
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.down.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.appGreen)
-                    Text("6.4%")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(.appGreen)
-                    Text("vs last month")
-                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                }
-
-                // Mini area chart
-                GeometryReader { geo in
-                    let pts = trendPoints
-                    let maxV = pts.map(\.value).max() ?? 1
-                    let w = geo.size.width
-                    let h = geo.size.height
-                    let stepX = w / CGFloat(pts.count - 1)
-
-                    Path { path in
-                        for (i, pt) in pts.enumerated() {
-                            let x = CGFloat(i) * stepX
-                            let y = h - CGFloat(pt.value / maxV) * h
-                            if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
-                            else { path.addLine(to: CGPoint(x: x, y: y)) }
-                        }
-                    }
-                    .stroke(Color.appGreen, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-
-                    Path { path in
-                        for (i, pt) in pts.enumerated() {
-                            let x = CGFloat(i) * stepX
-                            let y = h - CGFloat(pt.value / maxV) * h
-                            if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
-                            else { path.addLine(to: CGPoint(x: x, y: y)) }
-                        }
-                        path.addLine(to: CGPoint(x: w, y: h))
-                        path.addLine(to: CGPoint(x: 0, y: h))
-                        path.closeSubpath()
-                    }
-                    .fill(LinearGradient(colors: [Color.appGreen.opacity(0.25), Color.appGreen.opacity(0.02)], startPoint: .top, endPoint: .bottom))
-                }
-                .frame(height: 70)
-
-                // X-axis labels
-                HStack {
-                    ForEach(["1", "8", "15", "22", "31"], id: \.self) { label in
-                        Text(label)
-                            .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                if let monthOverMonthChange {
+                    HStack(spacing: 4) {
+                        Image(systemName: monthOverMonthChange <= 0 ? "arrow.down.right" : "arrow.up.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.appGreen)
+                        Text("\(String(format: "%.1f", abs(monthOverMonthChange)))%")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundColor(.appGreen)
+                        Text("vs last month")
+                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
                             .foregroundColor(.secondary)
-                        if label != "31" { Spacer() }
                     }
+                }
+
+                // Mini area chart — real weekly buckets from SpendingAggregates, not an
+                // invented curve.
+                if trendPoints.contains(where: { $0.expense > 0 }) {
+                    GeometryReader { geo in
+                        let pts = trendPoints
+                        let maxV = pts.map(\.expense).max() ?? 1
+                        let w = geo.size.width
+                        let h = geo.size.height
+                        let stepX = pts.count > 1 ? w / CGFloat(pts.count - 1) : 0
+
+                        Path { path in
+                            for (i, pt) in pts.enumerated() {
+                                let x = CGFloat(i) * stepX
+                                let y = h - CGFloat(pt.expense / maxV) * h
+                                if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                                else { path.addLine(to: CGPoint(x: x, y: y)) }
+                            }
+                        }
+                        .stroke(Color.appGreen, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+
+                        Path { path in
+                            for (i, pt) in pts.enumerated() {
+                                let x = CGFloat(i) * stepX
+                                let y = h - CGFloat(pt.expense / maxV) * h
+                                if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                                else { path.addLine(to: CGPoint(x: x, y: y)) }
+                            }
+                            path.addLine(to: CGPoint(x: w, y: h))
+                            path.addLine(to: CGPoint(x: 0, y: h))
+                            path.closeSubpath()
+                        }
+                        .fill(LinearGradient(colors: [Color.appGreen.opacity(0.25), Color.appGreen.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                    }
+                    .frame(height: 70)
+
+                    // X-axis labels
+                    HStack {
+                        ForEach(Array(trendPoints.enumerated()), id: \.offset) { index, point in
+                            Text(point.label)
+                                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                                .foregroundColor(.secondary)
+                            if index < trendPoints.count - 1 { Spacer() }
+                        }
+                    }
+                } else {
+                    Text("No spending recorded yet this month")
+                        .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .frame(height: 70)
                 }
             }
             .padding(14)
@@ -590,78 +639,114 @@ struct FinancialInsightsView: View {
 
     // MARK: - Personalized Insight Card
 
-    private var personalizedInsightCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 6) {
-                Image(systemName: "lightbulb.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.appWarningAmber)
-                Text("Personalized Insight")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-            }
+    private struct PersonalizedInsight {
+        let icon: String
+        let headline: String
+        let detail: String
+    }
 
-            HStack(alignment: .top, spacing: 14) {
-                // Coffee icon
-                ZStack {
-                    Circle()
-                        .fill(Color.appWarningAmber.opacity(0.12))
-                        .frame(width: 56, height: 56)
-                    Image(systemName: "cup.and.saucer.fill")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(.appWarningAmber)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("You spent ₹4,350 on cafes this month.")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-                    Text("That's 21% of your Food & Dining spending. Consider setting a budget to save more!")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                        .lineSpacing(2)
-                }
-                Button {
-                    showBudgetSheet = true
-                } label: {
-                    Text("Set Budget")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.appGreen)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-
-            // Carousel dots
-            HStack(spacing: 6) {
-                Spacer()
-                ForEach(0..<4, id: \.self) { i in
-                    Circle()
-                        .fill(i == 0 ? Color.appGreen : Color.primary.opacity(0.15))
-                        .frame(width: i == 0 ? 10 : 6, height: 6)
-                }
-                Spacer()
-            }
+    /// The category that rose the most vs. last month, if any; otherwise just the current top
+    /// category. `nil` (card hidden entirely) when there's nothing to say — no invented "cafe
+    /// spending" claim standing in for a sub-category the data model doesn't track.
+    private var personalizedInsight: PersonalizedInsight? {
+        if let rising = risingCategory, totalExpenses > 0 {
+            let categoryTotal = filteredExpenses.filter { $0.type == rising.name }.reduce(0) { $0 + $1.price }
+            let shareOfTotal = (categoryTotal / totalExpenses) * 100
+            return PersonalizedInsight(
+                icon: "arrow.up.right.circle.fill",
+                headline: "You spent ₹\(formatAmount(categoryTotal)) on \(rising.name) this month.",
+                detail: "That's \(String(format: "%.0f", shareOfTotal))% of your total spending, up \(String(format: "%.0f", rising.change))% from last month. Consider setting a budget to keep it in check."
+            )
         }
-        .padding(16)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 3)
+        if let top = categorySlices.first {
+            return PersonalizedInsight(
+                icon: "chart.pie.fill",
+                headline: "\(top.name) is your biggest expense this month.",
+                detail: "It makes up \(String(format: "%.0f", top.percent))% of your total spending. Set a budget to keep it on track."
+            )
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private var personalizedInsightCard: some View {
+        if let insight = personalizedInsight {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 6) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.appWarningAmber)
+                    Text("Personalized Insight")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                }
+
+                HStack(alignment: .top, spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.appWarningAmber.opacity(0.12))
+                            .frame(width: 56, height: 56)
+                        Image(systemName: insight.icon)
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundColor(.appWarningAmber)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(insight.headline)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+                        Text(insight.detail)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .lineSpacing(2)
+                    }
+                    Button {
+                        showBudgetSheet = true
+                    } label: {
+                        Text("Set Budget")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.appGreen)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(16)
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 3)
+        }
     }
 
     // MARK: - Bottom Stats Bar
 
     private var bottomStatsBar: some View {
         HStack(spacing: 0) {
-            bottomStatItem(icon: "arrow.up.circle.fill", iconColor: Color.appExpenseRed, title: "Highest Expense", value: "₹8,560", sub: "May 12")
+            bottomStatItem(
+                icon: "arrow.up.circle.fill", iconColor: Color.appExpenseRed, title: "Highest Expense",
+                value: highestExpense.map { AppFormatter.currencyRounded($0.price) } ?? "—",
+                sub: highestExpense.map { $0.date.formatted(.dateTime.month(.abbreviated).day()) } ?? "No data"
+            )
             Divider().frame(height: 44)
-            bottomStatItem(icon: "arrow.down.circle.fill", iconColor: Color.appGreen, title: "Lowest Expense", value: "₹45", sub: "May 5")
+            bottomStatItem(
+                icon: "arrow.down.circle.fill", iconColor: Color.appGreen, title: "Lowest Expense",
+                value: lowestExpense.map { AppFormatter.currencyRounded($0.price) } ?? "—",
+                sub: lowestExpense.map { $0.date.formatted(.dateTime.month(.abbreviated).day()) } ?? "No data"
+            )
             Divider().frame(height: 44)
-            bottomStatItem(icon: "list.bullet.rectangle.fill", iconColor: Color.appIndigo, title: "Total Transactions", value: "42", sub: "+12 vs last month")
+            bottomStatItem(
+                icon: "list.bullet.rectangle.fill", iconColor: Color.appIndigo, title: "Total Transactions",
+                value: "\(filteredExpenses.count)",
+                sub: transactionCountChange == 0 ? "Same as last month" : "\(transactionCountChange > 0 ? "+" : "")\(transactionCountChange) vs last month"
+            )
             Divider().frame(height: 44)
-            bottomStatItem(icon: "banknote.fill", iconColor: Color.appWarningAmber, title: "Money Saved", value: "₹10,240", sub: "So far this month")
+            bottomStatItem(
+                icon: "banknote.fill", iconColor: Color.appWarningAmber, title: "Money Saved",
+                value: AppFormatter.currencyRounded(moneySaved),
+                sub: "So far this month"
+            )
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 8)

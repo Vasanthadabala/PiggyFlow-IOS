@@ -1,11 +1,14 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct TransactionDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Query(sort: \Expense.date, order: .reverse) private var allExpenses: [Expense]
     @State private var showEditSheet = false
     @State private var showDeleteAlert = false
+    @State private var showReceiptViewer = false
 
     let item: HomeView.TransactionItem
 
@@ -15,13 +18,30 @@ struct TransactionDetailView: View {
     private var themeColor: Color { isIncome ? .appGreen : .appExpenseRed }
     private var merchantTitle: String { item.title.isEmpty ? item.type : item.title }
 
-    // Simulated related transactions
-    private var relatedItems: [(name: String, sub: String, amount: String, date: String)] {
-        [
-            (name: merchantTitle, sub: "Shopping • HDFC Bank", amount: "-₹875.50", date: "May 23, 2025"),
-            (name: merchantTitle, sub: "Shopping • HDFC Bank", amount: "-₹1,050.00", date: "May 12, 2025"),
-            (name: merchantTitle, sub: "Shopping • HDFC Bank", amount: "-₹945.75", date: "Apr 28, 2025")
-        ]
+    private var currentExpense: Expense? {
+        if case .expense(let expense) = item { return expense }
+        return nil
+    }
+
+    private var receiptFileName: String { currentExpense?.receiptFileName ?? "" }
+    private var receiptImage: UIImage? { ReceiptStorage.load(receiptFileName) }
+
+    /// Other expenses at the same merchant (falling back to same category when there's no
+    /// merchant on record) — the real counterpart to the old hardcoded 3-row sample list.
+    private var relatedExpenses: [Expense] {
+        guard let currentExpense else { return [] }
+        let merchant = currentExpense.merchant.trimmingCharacters(in: .whitespacesAndNewlines)
+        return allExpenses
+            .filter { candidate in
+                guard candidate.id != currentExpense.id else { return false }
+                if !merchant.isEmpty {
+                    return candidate.merchant.caseInsensitiveCompare(merchant) == .orderedSame
+                }
+                return candidate.type == currentExpense.type
+            }
+            .sorted { $0.date > $1.date }
+            .prefix(3)
+            .map { $0 }
     }
 
     var body: some View {
@@ -47,7 +67,7 @@ struct TransactionDetailView: View {
                     receiptCard
 
                     // Spending Insights
-                    spendingInsightsCard
+                    spendingInsightsSection
 
                     // Related Transactions
                     relatedTransactionsCard
@@ -63,14 +83,34 @@ struct TransactionDetailView: View {
         .ignoresSafeArea(.container, edges: .bottom)
         .background(Color.appBackground.ignoresSafeArea())
         .navigationBarHidden(true)
-        .sheet(isPresented: $showEditSheet) {
-            AddExpenseBottomSheetView(itemToEdit: item)
+        .fullScreenCover(isPresented: $showEditSheet) {
+            editDestination
+        }
+        .sheet(isPresented: $showReceiptViewer) {
+            ReceiptViewerSheet(image: receiptImage)
         }
         .alert("Delete Transaction?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) { deleteTransaction() }
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Are you sure you want to delete this entry? This action cannot be undone.")
+        }
+    }
+
+    // MARK: - Edit Routing
+
+    /// Bill-scanned expenses open `EditTransactionView` (receipt, split, real merchant
+    /// insights); everything else — manual expenses and all income — keeps its existing
+    /// editor. Income has no receipt/bill concept, so it isn't part of this split.
+    @ViewBuilder
+    private var editDestination: some View {
+        switch item {
+        case .expense(let expense) where expense.source == "receipt":
+            EditTransactionView(expense: expense)
+        case .expense(let expense):
+            EditExpenseView(expense: expense)
+        case .income:
+            AddExpenseBottomSheetView(itemToEdit: item)
         }
     }
 
@@ -130,7 +170,7 @@ struct TransactionDetailView: View {
                 Text(merchantTitle)
                     .font(.system(size: 17, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
-                Text("\(item.type.isEmpty ? "General" : item.type) • HDFC Bank")
+                Text(item.account.isEmpty ? (item.type.isEmpty ? "General" : item.type) : "\(item.type.isEmpty ? "General" : item.type) • \(item.account)")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
                 Text("\(formattedDate(item.date))")
@@ -190,26 +230,21 @@ struct TransactionDetailView: View {
             Divider().padding(.horizontal, 16)
 
             HStack(spacing: 14) {
-                // Bank initial circle
+                // Account initial circle
                 ZStack {
                     Circle()
                         .fill(Color.appIndigo.opacity(0.12))
                         .frame(width: 36, height: 36)
-                    Text("H")
+                    Text(item.account.isEmpty ? "?" : String(item.account.prefix(1)).uppercased())
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundColor(.appIndigo)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("HDFC Bank")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-                    Text("**** 4321")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                }
+                Text(item.account.isEmpty ? "No Account Selected" : item.account)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("-₹\(String(format: "%.2f", item.amount))")
+                    Text((isIncome ? "+₹" : "-₹") + String(format: "%.2f", item.amount))
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
                     Text("100%")
@@ -254,12 +289,9 @@ struct TransactionDetailView: View {
                         .foregroundColor(.appGreen)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.type.isEmpty ? "Shopping" : item.type)
+                    Text(item.type.isEmpty ? "Uncategorised" : item.type)
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
-                    Text("Groceries")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
                 }
                 Spacer()
                 HStack(spacing: 3) {
@@ -305,9 +337,9 @@ struct TransactionDetailView: View {
             Divider().padding(.horizontal, 16)
 
             HStack {
-                Text(item.note.isEmpty ? "Monthly groceries and household items" : item.note)
+                Text(item.note.isEmpty ? "No notes added" : item.note)
                     .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(item.note.isEmpty ? .secondary.opacity(0.7) : .secondary)
                     .lineSpacing(2)
                 Spacer()
             }
@@ -338,188 +370,144 @@ struct TransactionDetailView: View {
 
             Divider().padding(.horizontal, 16)
 
-            HStack(spacing: 12) {
-                // Thumbnail placeholder
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color(.tertiarySystemGroupedBackground))
-                    .frame(width: 60, height: 60)
-                    .overlay(
-                        Image(systemName: "doc.fill")
-                            .font(.system(size: 22))
-                            .foregroundColor(.secondary)
-                    )
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("\(merchantTitle)_Bill_\(shortDate(item.date)).jpg")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-                    Text("Uploaded on \(formattedDate(item.date))")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                    Text("Size: 245 KB")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
+            if receiptFileName.isEmpty {
+                HStack {
+                    Text("No receipt attached")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary.opacity(0.7))
+                    Spacer()
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+            } else {
+                HStack(spacing: 12) {
+                    Group {
+                        if let receiptImage {
+                            Image(uiImage: receiptImage)
+                                .resizable()
+                                .scaledToFill()
+                        } else {
+                            Color(.tertiarySystemGroupedBackground)
+                                .overlay(
+                                    Image(systemName: "doc.fill")
+                                        .font(.system(size: 22))
+                                        .foregroundColor(.secondary)
+                                )
+                        }
+                    }
+                    .frame(width: 60, height: 60)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-                Spacer()
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(merchantTitle.replacingOccurrences(of: " ", with: ""))_Bill.jpg")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        Text("Uploaded on \(formattedDate(item.date))")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                        if let sizeBytes = ReceiptStorage.fileSize(receiptFileName) {
+                            Text("Size: \(AppFormatter.fileSize(sizeBytes))")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundColor(.secondary)
+                        }
+                    }
 
-                Button { } label: {
-                    VStack(spacing: 4) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.appGreen.opacity(0.12))
-                                .frame(width: 40, height: 40)
-                            Image(systemName: "eye.fill")
-                                .font(.system(size: 16, weight: .bold))
+                    Spacer()
+
+                    Button {
+                        Haptics.light()
+                        showReceiptViewer = true
+                    } label: {
+                        VStack(spacing: 4) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.appGreen.opacity(0.12))
+                                    .frame(width: 40, height: 40)
+                                Image(systemName: "eye.fill")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(.appGreen)
+                            }
+                            Text("View")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
                                 .foregroundColor(.appGreen)
                         }
-                        Text("View")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundColor(.appGreen)
                     }
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-        }
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
-    }
-
-    // MARK: - Spending Insights Card
-
-    private var spendingInsightsCard: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: "lightbulb.fill")
-                    .font(.system(size: 13))
-                    .foregroundColor(.appWarningAmber)
-                Text("Spending Insights")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-                Spacer()
-            }
-            .padding(16)
-
-            Divider().padding(.horizontal, 16)
-
-            HStack(spacing: 0) {
-                insightStat(title: "Total spent at \(merchantTitle)", value: "₹2,845.00", sub: "This Month")
-                Divider().frame(height: 50)
-                insightStat(title: "Transactions", value: "3", sub: "This Month")
-                Divider().frame(height: 50)
-                insightStat(title: "Average per order", value: "₹948.33", sub: "This Month")
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-
-            Divider().padding(.horizontal, 16)
-
-            Button { } label: {
-                HStack {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.appGreen)
-                    Text("You've spent 12% more at \(merchantTitle) compared to last month.")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.primary)
-                        .multilineTextAlignment(.leading)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.secondary)
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
-            .buttonStyle(.plain)
         }
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
     }
 
+    // MARK: - Spending Insights
+
     @ViewBuilder
-    private func insightStat(title: String, value: String, sub: String) -> some View {
-        VStack(spacing: 4) {
-            Text(title)
-                .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-            Text(value)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
-            Text(sub)
-                .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                .foregroundColor(.secondary)
+    private var spendingInsightsSection: some View {
+        if let currentExpense {
+            SpendingInsightsCard(expenses: allExpenses, subject: currentExpense)
         }
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Related Transactions Card
 
+    @ViewBuilder
     private var relatedTransactionsCard: some View {
-        VStack(spacing: 0) {
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "list.bullet.rectangle.fill")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                    Text("Related Transactions")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-                }
-                Spacer()
-                Button { } label: {
-                    Text("View All")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(.appGreen)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(16)
-
-            ForEach(Array(relatedItems.enumerated()), id: \.offset) { idx, rel in
-                Divider().padding(.horizontal, 16)
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.appGreen.opacity(0.10))
-                            .frame(width: 40, height: 40)
-                        Text(item.emoji.isEmpty ? String(merchantTitle.prefix(2)).uppercased() : item.emoji)
-                            .font(.system(size: 16))
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(rel.name)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
-                        Text(rel.sub)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
+        if !relatedExpenses.isEmpty {
+            VStack(spacing: 0) {
+                HStack {
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet.rectangle.fill")
+                            .font(.system(size: 13))
                             .foregroundColor(.secondary)
+                        Text("Related Transactions")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
                     }
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(rel.amount)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundColor(.appExpenseRed)
-                        Text(rel.date)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundColor(.secondary)
-                    }
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.secondary.opacity(0.5))
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(16)
+
+                ForEach(Array(relatedExpenses.enumerated()), id: \.element.id) { _, related in
+                    Divider().padding(.horizontal, 16)
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.appExpenseRed.opacity(0.10))
+                                .frame(width: 40, height: 40)
+                            Text(related.emoji.isEmpty ? String((related.name.isEmpty ? related.type : related.name).prefix(2)).uppercased() : related.emoji)
+                                .font(.system(size: 16))
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(related.name.isEmpty ? related.type : related.name)
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
+                            Text(related.account.isEmpty ? related.type : "\(related.type) • \(related.account)")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(AppFormatter.signedCurrency(related.price, isIncome: false))
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundColor(.appExpenseRed)
+                            Text(related.date.formatted(.dateTime.month(.abbreviated).day().year()))
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                }
             }
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
         }
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
     }
 
     // MARK: - Bottom Action Bar
@@ -586,13 +574,7 @@ struct TransactionDetailView: View {
         )
     }
 
-    // MARK: - Helpers
-
-    private func shortDate(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "MMMdd"
-        return f.string(from: date)
-    }
+    // MARK: - Delete
 
     private func deleteTransaction() {
         switch item {

@@ -73,6 +73,8 @@ enum BudgetGoalStatus: Int, CaseIterable {
 /// Monthly category budgets, their progress, and how much is left.
 struct BudgetGoalsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Query private var trackerRecords: [TrackerRecord]
+    @Query private var expenses: [Expense]
 
     enum SortOrder: String, CaseIterable, Identifiable {
         case status = "Status"
@@ -87,22 +89,59 @@ struct BudgetGoalsView: View {
     enum GoalFilter: Hashable {
         case all
         case status(BudgetGoalStatus)
-        case group(String)
 
         var label: String {
             switch self {
             case .all:                 return "All"
             case .status(let status):  return status.label
-            case .group(let group):    return group
             }
         }
     }
 
-    @State private var goals: [BudgetGoalItem] = BudgetGoalsView.sampleGoals
     @State private var sortOrder: SortOrder = .status
     @State private var filter: GoalFilter = .all
     @State private var showAddTracker = false
     @State private var monthLabel = Date().formatted(.dateTime.month(.wide).year())
+
+    // MARK: - Real data
+
+    private var budgetTrackers: [TrackerRecord] { trackerRecords.filter { $0.type == "budget" } }
+
+    private func spent(for category: String, in month: Date = Date()) -> Double {
+        guard !category.isEmpty else { return 0 }
+        let cal = Calendar.current
+        return expenses
+            .filter { $0.type == category && cal.isDate($0.date, equalTo: month, toGranularity: .month) }
+            .reduce(0) { $0 + $1.price }
+    }
+
+    /// Palette cycled by index — `TrackerRecord` has no colour of its own to persist, same
+    /// approach `StatsView`'s category breakdown already uses.
+    private let goalPalette: [Color] = [
+        .appGreen,
+        Color(red: 249/255, green: 115/255, blue: 22/255),
+        Color(red: 147/255, green: 51/255, blue: 234/255),
+        Color(red: 236/255, green: 72/255, blue: 153/255),
+        Color(red: 59/255, green: 130/255, blue: 246/255),
+        Color(red: 245/255, green: 197/255, blue: 66/255),
+        .appTeal
+    ]
+
+    /// Derived fresh from `@Query`'d trackers/expenses every render — no manual refresh needed,
+    /// and the budget created by this screen's own "Add Budget" flow shows up immediately.
+    private var goals: [BudgetGoalItem] {
+        budgetTrackers.enumerated().map { index, tracker in
+            BudgetGoalItem(
+                id: tracker.id,
+                name: tracker.category.isEmpty ? tracker.name : tracker.category,
+                group: tracker.subType.capitalized,
+                spent: spent(for: tracker.category),
+                budget: tracker.amount,
+                icon: tracker.logoUrl.isEmpty ? "target" : tracker.logoUrl,
+                tint: goalPalette[index % goalPalette.count]
+            )
+        }
+    }
 
     // MARK: - Derived totals
 
@@ -125,8 +164,6 @@ struct BudgetGoalsView: View {
             filtered = goals.filter { $0.status == .atRisk || $0.status == .overBudget }
         case .status(let status):
             filtered = goals.filter { $0.status == status }
-        case .group(let group):
-            filtered = goals.filter { $0.group == group }
         }
 
         switch sortOrder {
@@ -410,8 +447,6 @@ struct BudgetGoalsView: View {
 
                 Menu {
                     Button("All Goals") { filter = .all }
-                    Button("Needs") { filter = .group("Needs") }
-                    Button("Wants") { filter = .group("Wants") }
                     Divider()
                     ForEach(BudgetGoalStatus.allCases, id: \.rawValue) { status in
                         Button(status.label) { filter = .status(status) }
@@ -612,19 +647,6 @@ struct BudgetGoalsView: View {
         }
     }
 
-    // MARK: - Sample data
-
-    /// Stands in until category budgets are persisted — the rest of the screen computes
-    /// entirely from this array, so swapping it for a `@Query` changes nothing else.
-    static let sampleGoals: [BudgetGoalItem] = [
-        BudgetGoalItem(name: "Groceries", group: "Needs", spent: 8_200, budget: 12_000, icon: "bag.fill", tint: .appGreen),
-        BudgetGoalItem(name: "Dining Out", group: "Wants", spent: 4_600, budget: 5_000, icon: "fork.knife", tint: Color(red: 249/255, green: 115/255, blue: 22/255)),
-        BudgetGoalItem(name: "Transport", group: "Needs", spent: 3_200, budget: 6_000, icon: "car.fill", tint: Color(red: 147/255, green: 51/255, blue: 234/255)),
-        BudgetGoalItem(name: "Entertainment", group: "Wants", spent: 3_060, budget: 3_000, icon: "heart.fill", tint: Color(red: 236/255, green: 72/255, blue: 153/255)),
-        BudgetGoalItem(name: "Education", group: "Needs", spent: 6_000, budget: 10_000, icon: "graduationcap.fill", tint: Color(red: 59/255, green: 130/255, blue: 246/255)),
-        BudgetGoalItem(name: "Rent", group: "Needs", spent: 18_000, budget: 18_000, icon: "house.fill", tint: Color(red: 245/255, green: 197/255, blue: 66/255)),
-        BudgetGoalItem(name: "Shopping", group: "Wants", spent: 12_000, budget: 15_000, icon: "gift.fill", tint: .appTeal)
-    ]
 }
 
 /// Detail screen for a single budget goal isn't built yet — this keeps the row tappable

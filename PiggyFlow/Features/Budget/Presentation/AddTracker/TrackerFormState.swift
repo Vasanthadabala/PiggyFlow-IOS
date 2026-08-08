@@ -249,6 +249,17 @@ struct TrackerFormState {
         }
     }
 
+    /// The spending/goal category written to `TrackerRecord.category` — Budget's own category
+    /// picker for budgets, Goal's `goalCategory` for goals, blank for subscription/EMI (neither
+    /// has a category concept in the form).
+    func storedCategory(for kind: TrackerKind) -> String {
+        switch kind {
+        case .budget: return category
+        case .goal:   return goalCategory
+        case .subscription, .emi: return ""
+        }
+    }
+
     private static func number(_ text: String) -> Double {
         Double(text.filter { $0.isNumber || $0 == "." }) ?? 0
     }
@@ -303,11 +314,12 @@ enum TrackerOptions {
         TrackerOption(name: "Yearly", icon: "calendar.badge.clock")
     ]
 
-    static let accounts: [TrackerOption] = [
-        TrackerOption(name: "Personal Account", icon: "wallet.pass.fill"),
-        TrackerOption(name: "Business Account", icon: "briefcase.fill"),
-        TrackerOption(name: "Joint Account", icon: "person.2.fill")
-    ]
+    /// Real accounts the user has added — falls back to a single placeholder so `[0]`-indexing
+    /// call sites never crash before the user has added their first real account.
+    static func accounts() -> [TrackerOption] {
+        let real = AccountManager.shared.accounts.map { TrackerOption(name: $0.name, icon: $0.iconName) }
+        return real.isEmpty ? [TrackerOption(name: "Cash", icon: "banknote.fill")] : real
+    }
 
     static let paymentMethods: [TrackerOption] = [
         TrackerOption(name: "HDFC Bank •••• 2345", icon: "building.columns.fill"),

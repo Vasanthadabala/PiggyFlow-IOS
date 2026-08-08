@@ -39,13 +39,22 @@ struct MainTabView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .environmentObject(tabBarVisibility)
+            // Switching tabs discards the outgoing tab's whole navigation stack, so any
+            // screen still registered there would otherwise keep the bar hidden forever.
+            .onChange(of: selectedTab) { _, _ in
+                tabBarVisibility.reset()
+            }
 
             // Floating Capsule Bottom Tab Bar — hidden on pushed detail screens
             if !tabBarVisibility.isHidden {
                 customTabBar
                     .padding(.horizontal, 20)
                     .padding(.bottom, 14)
-                    .transition(.opacity)
+                    // Slides down off the edge rather than fading in place: the bar is a
+                    // capsule floating over the page, so it should travel back to its resting
+                    // spot the way a sheet does. A bare cross-fade made it materialise mid-air
+                    // over whichever screen the pop was still animating.
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         // Full screen rather than a sheet: the chooser grid now carries a proper header and
@@ -53,13 +62,24 @@ struct MainTabView: View {
         .fullScreenCover(isPresented: $showAddExpenseSheet) {
             AddExpenseBottomSheetView(itemToEdit: nil)
         }
-        .animation(.easeInOut(duration: 0.2), value: tabBarVisibility.isHidden)
+        // Asymmetric on purpose: leaving, the bar should clear the way promptly so it never
+        // competes with the push animation; returning, it settles back with a little weight,
+        // which reads as the bar coming home rather than blinking into existence.
+        .animation(
+            tabBarVisibility.isHidden
+                ? .easeOut(duration: 0.13)
+                : .spring(response: 0.28, dampingFraction: 0.86),
+            value: tabBarVisibility.isHidden
+        )
         .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     /// The capsule's own fill — shared with the FAB's halo ring so the two are guaranteed
-    /// to match rather than risk drifting if one is edited without the other.
-    private var tabBarFill: Color { Color(.secondarySystemGroupedBackground) }
+    /// to match rather than risk drifting if one is edited without the other. Uses the same
+    /// token every other card does, rather than a system grouped-background gray, so the
+    /// floating bar — the one surface visible on literally every screen — reads as the same
+    /// material as the rest of the UI.
+    private var tabBarFill: Color { Color.appSurface }
 
     private var customTabBar: some View {
         HStack(spacing: 0) {
@@ -100,7 +120,6 @@ struct MainTabView: View {
                             }
                         )
                         .frame(width: 54, height: 54)
-                        .shadow(color: Color.appGreen.opacity(0.45), radius: 10, x: 0, y: 5)
                         .shadow(color: .black.opacity(0.12), radius: 4, x: 0, y: 2)
 
                     Image(systemName: "plus")

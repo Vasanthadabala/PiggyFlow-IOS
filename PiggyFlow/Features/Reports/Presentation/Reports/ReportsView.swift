@@ -25,6 +25,51 @@ struct ReportsView: View {
         var id: String { rawValue }
     }
 
+    // MARK: - Real data
+
+    private var reportMonth: Date { Date() }
+
+    private var monthExpenses: [Expense] {
+        let cal = Calendar.current
+        return expenses.filter { cal.isDate($0.date, equalTo: reportMonth, toGranularity: .month) }
+    }
+
+    private var monthIncomes: [Income] {
+        let cal = Calendar.current
+        return incomes.filter { cal.isDate($0.date, equalTo: reportMonth, toGranularity: .month) }
+    }
+
+    private var categoryBreakdown: [CategoryTotal] {
+        let total = monthExpenses.reduce(0) { $0 + $1.price }
+        return CalculateExpenseSummaryUseCase.categoryBreakdown(of: monthExpenses, total: total)
+    }
+
+    private var topCategory: CategoryTotal? { categoryBreakdown.first }
+
+    private var totalSpentThisMonth: Double { monthExpenses.reduce(0) { $0 + $1.price } }
+    private var expenseChange: Double? { SpendingAggregates.monthOverMonthChange(in: expenses, from: reportMonth) }
+
+    private func incomeTotal(monthsAgo: Int) -> Double {
+        let cal = Calendar.current
+        guard let target = cal.date(byAdding: .month, value: -monthsAgo, to: reportMonth) else { return 0 }
+        return incomes.filter { cal.isDate($0.date, equalTo: target, toGranularity: .month) }.reduce(0) { $0 + $1.income }
+    }
+
+    private func expenseTotal(monthsAgo: Int) -> Double {
+        let cal = Calendar.current
+        guard let target = cal.date(byAdding: .month, value: -monthsAgo, to: reportMonth) else { return 0 }
+        return expenses.filter { cal.isDate($0.date, equalTo: target, toGranularity: .month) }.reduce(0) { $0 + $1.price }
+    }
+
+    private var savingsThisMonth: Double { incomeTotal(monthsAgo: 0) - totalSpentThisMonth }
+    private var savingsChange: Double? {
+        let previous = incomeTotal(monthsAgo: 1) - expenseTotal(monthsAgo: 1)
+        guard previous > 0 else { return nil }
+        return ((savingsThisMonth - previous) / previous) * 100
+    }
+
+    private var hasAnyData: Bool { !expenses.isEmpty || !incomes.isEmpty }
+
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
@@ -160,7 +205,7 @@ struct ReportsView: View {
             .padding(4)
             .background(
                 Capsule()
-                    .fill(Color.white)
+                    .fill(Color.appSurface)
                     .shadow(color: Color.black.opacity(0.03), radius: 5, x: 0, y: 2)
             )
         }
@@ -218,7 +263,7 @@ struct ReportsView: View {
             .buttonStyle(.plain)
         }
         .padding(14)
-        .background(Color.white)
+        .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: Color.black.opacity(0.03), radius: 6, x: 0, y: 2)
     }
@@ -326,10 +371,11 @@ struct ReportsView: View {
     @ViewBuilder
     private func reportTypeCard(icon: String, iconColor: Color, bgColor: Color, title: String, description: String) -> some View {
         NavigationLink(destination: ReportDetailView().hidesTabBarOnPush()) {
-            VStack(alignment: .leading, spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(iconColor)
+            VStack(alignment: .leading, spacing: 10) {
+                TintedIconCircle(color: iconColor, size: 38, cornerRadius: 12) {
+                    Image(systemName: icon)
+                        .font(.system(size: 17, weight: .bold))
+                }
 
                 // Titles like "Subscription Report" / "Cash Flow Report" don't fit a third
                 // of the row on one line, so allow two rather than truncating them.
@@ -349,9 +395,26 @@ struct ReportsView: View {
                     .multilineTextAlignment(.leading)
             }
             .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 124, alignment: .topLeading)
-            .background(bgColor.opacity(0.45))
+            // Fixed rather than a minimum: with `minHeight`, cards whose title/description
+            // wrapped to only one line (Budget, EMI) stayed shorter than the two-line cards
+            // next to them in the same grid row, breaking the uniform-card look a grid implies.
+            .frame(maxWidth: .infinity, minHeight: 132, maxHeight: 132, alignment: .topLeading)
+            // `bgColor` is already a light tint on its own (either a low-opacity brand colour
+            // or a pre-mixed pastel) — fading it again on top of itself was compounding two
+            // dilutions into one another, which is what read as washed out.
+            .background(bgColor)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            // Same glossy-highlight / grounding-shadow pair the FAB uses, so a flat colour
+            // fill reads as a raised, bumped surface rather than a painted rectangle.
+            .overlay(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(RadialGradient(colors: [.white.opacity(0.4), .clear], center: .topLeading, startRadius: 4, endRadius: 100))
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(RadialGradient(colors: [.black.opacity(0.10), .clear], center: .bottomTrailing, startRadius: 4, endRadius: 110))
+                }
+            )
+            .shadow(color: Color.black.opacity(0.09), radius: 10, x: 0, y: 5)
         }
         .buttonStyle(.plain)
     }
@@ -359,112 +422,29 @@ struct ReportsView: View {
     // MARK: - 5. Saved Reports Section
     private var savedReportsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Saved Reports")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+            Text("Saved Reports")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundColor(.primary)
+
+            VStack(spacing: 8) {
+                Image(systemName: "tray")
+                    .font(.system(size: 26, weight: .medium))
+                    .foregroundColor(.secondary.opacity(0.5))
+
+                Text("No saved reports yet")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
 
-                Spacer()
-
-                NavigationLink(destination: ReportDetailView().hidesTabBarOnPush()) {
-                    HStack(spacing: 2) {
-                        Text("View All")
-                            .font(.system(size: 12.5, weight: .bold, design: .rounded))
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .bold))
-                    }
-                    .foregroundColor(.appGreen)
-                }
+                Text("Reports you export will appear here")
+                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
             }
-
-            VStack(spacing: 0) {
-                savedReportRow(
-                    title: "May Overview Report",
-                    subtitle: "May 1 – May 31, 2025  •  Overview Report",
-                    dateText: "Generated on May 31, 2025",
-                    icon: "chart.pie.fill",
-                    iconColor: Color.appGreen,
-                    bgColor: Color.appGreen.opacity(0.12)
-                )
-
-                Divider().padding(.leading, 64)
-
-                savedReportRow(
-                    title: "Q2 Category Report",
-                    subtitle: "Apr 1 – Jun 30, 2025  •  Category Report",
-                    dateText: "Generated on May 30, 2025",
-                    icon: "cart.fill",
-                    iconColor: Color(red: 249/255, green: 115/255, blue: 22/255),
-                    bgColor: Color(red: 254/255, green: 243/255, blue: 235/255)
-                )
-
-                Divider().padding(.leading, 64)
-
-                savedReportRow(
-                    title: "Top Merchants (This Year)",
-                    subtitle: "Jan 1 – Dec 31, 2025  •  Merchant Report",
-                    dateText: "Generated on May 28, 2025",
-                    icon: "bag.fill",
-                    iconColor: Color(red: 147/255, green: 51/255, blue: 234/255),
-                    bgColor: Color(red: 243/255, green: 232/255, blue: 255/255)
-                )
-
-                Divider().padding(.leading, 64)
-
-                savedReportRow(
-                    title: "Income vs Expense (This Month)",
-                    subtitle: "May 1 – May 31, 2025  •  Income vs Expense",
-                    dateText: "Generated on May 25, 2025",
-                    icon: "wallet.pass.fill",
-                    iconColor: Color(red: 37/255, green: 99/255, blue: 235/255),
-                    bgColor: Color(red: 239/255, green: 246/255, blue: 255/255)
-                )
-            }
-            .background(Color.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 26)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
         }
-    }
-
-    @ViewBuilder
-    private func savedReportRow(title: String, subtitle: String, dateText: String, icon: String, iconColor: Color, bgColor: Color) -> some View {
-        NavigationLink(destination: ReportDetailView().hidesTabBarOnPush()) {
-            HStack(spacing: 12) {
-                Circle()
-                    .fill(bgColor)
-                    .frame(width: 38, height: 38)
-                    .overlay(
-                        Image(systemName: icon)
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(iconColor)
-                    )
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-
-                    Text(subtitle)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text(dateText)
-                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary.opacity(0.8))
-
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.secondary.opacity(0.6))
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - 6. Reports Insights Section
@@ -485,82 +465,111 @@ struct ReportsView: View {
                     .foregroundColor(.primary)
             }
 
-            HStack(spacing: 0) {
-                // Column 1: Highest spending category
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Highest spending category")
-                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
-                        .fixedSize(horizontal: false, vertical: true)
+            if !hasAnyData {
+                Text("Add expenses and income to see your insights here.")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 14)
+                    .padding(.horizontal, 6)
+                    .background(Color.appGreen.opacity(0.06))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            } else {
+                HStack(spacing: 0) {
+                    // Column 1: Highest spending category
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Highest spending category")
+                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                    Text("Food & Dining")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
+                        if let topCategory {
+                            Text(topCategory.name)
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
 
-                    Text("₹32,450 (26.9%)")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundColor(Color.appGreen)
+                            Text("\(AppFormatter.currencyRounded(topCategory.amount)) (\(String(format: "%.1f", topCategory.percentage))%)")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundColor(Color.appGreen)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        } else {
+                            Text("No spending yet")
+                                .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: 1, height: 48)
+
+                    // Column 2: Total spent this month
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Total spent this month")
+                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(AppFormatter.currencyRounded(totalSpentThisMonth))
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+
+                        if let expenseChange {
+                            Text("\(expenseChange >= 0 ? "↑" : "↓") \(String(format: "%.1f", abs(expenseChange)))% vs last month")
+                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                .foregroundColor(expenseChange >= 0 ? Color(red: 225/255, green: 29/255, blue: 72/255) : Color.appGreen)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: 1, height: 48)
+
+                    // Column 3: Savings this month
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Savings this month")
+                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(AppFormatter.currencyRounded(savingsThisMonth))
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+
+                        if let savingsChange {
+                            Text("\(savingsChange >= 0 ? "↑" : "↓") \(String(format: "%.1f", abs(savingsChange)))% vs last month")
+                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                .foregroundColor(savingsChange >= 0 ? Color.appGreen : Color(red: 225/255, green: 29/255, blue: 72/255))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 6)
-
-                Rectangle()
-                    .fill(Color.gray.opacity(0.15))
-                    .frame(width: 1, height: 48)
-
-                // Column 2: Total spent this month
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Total spent this month")
-                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Text("₹1,20,440")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-
-                    Text("↑ 8.5% vs Apr 1 – Apr 30")
-                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(red: 225/255, green: 29/255, blue: 72/255))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 6)
-
-                Rectangle()
-                    .fill(Color.gray.opacity(0.15))
-                    .frame(width: 1, height: 48)
-
-                // Column 3: Savings this month
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Savings this month")
-                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Text("₹64,560")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-
-                    Text("↑ 32.1% vs Apr 1 – Apr 30")
-                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                        .foregroundColor(Color.appGreen)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 6)
+                .padding(.vertical, 14)
+                .background(Color.appGreen.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .padding(.vertical, 14)
-            .background(Color.appGreen.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
     }
 
@@ -605,7 +614,7 @@ struct ReportsView: View {
                 }
             }
             .padding(14)
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
         }
@@ -636,10 +645,11 @@ struct ReportsView: View {
 
     // MARK: - PDF Export Helper
     private func exportPDFReport() {
+        let reportTitle = "Financial Report - \(reportMonth.formatted(.dateTime.month(.wide).year()))"
         let pdfMetaData = [
             kCGPDFContextCreator: "PiggyFlow",
             kCGPDFContextAuthor: "PiggyFlow User",
-            kCGPDFContextTitle: "Financial Report - May 2025"
+            kCGPDFContextTitle: reportTitle
         ]
         let format = UIGraphicsPDFRendererFormat()
         format.documentInfo = pdfMetaData as [String: Any]
@@ -649,7 +659,7 @@ struct ReportsView: View {
         let data = renderer.pdfData { context in
             context.beginPage()
             var y: CGFloat = 40
-            "PiggyFlow Financial Report - May 2025".draw(at: CGPoint(x: 40, y: y), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 22)])
+            "PiggyFlow \(reportTitle)".draw(at: CGPoint(x: 40, y: y), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 22)])
             y += 40
             y = PDFTableRenderer.drawHeader(y: y)
             for exp in expenses.prefix(20) {

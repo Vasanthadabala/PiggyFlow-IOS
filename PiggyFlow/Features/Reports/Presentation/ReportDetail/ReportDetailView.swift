@@ -15,6 +15,94 @@ struct ReportDetailView: View {
 
     private let trendPeriods = ["Daily", "Weekly", "Monthly"]
 
+    // MARK: - Real data
+
+    private static let categoryPalette: [Color] = [
+        .appGreen,
+        Color(red: 59/255, green: 130/255, blue: 246/255),
+        Color(red: 147/255, green: 51/255, blue: 234/255),
+        Color(red: 249/255, green: 115/255, blue: 22/255),
+        Color.appExpenseRed,
+        Color.gray.opacity(0.55)
+    ]
+
+    private var reportMonth: Date { Date() }
+
+    private var monthExpenses: [Expense] {
+        let cal = Calendar.current
+        return expenses.filter { cal.isDate($0.date, equalTo: reportMonth, toGranularity: .month) }
+    }
+
+    private var monthIncomes: [Income] {
+        let cal = Calendar.current
+        return incomes.filter { cal.isDate($0.date, equalTo: reportMonth, toGranularity: .month) }
+    }
+
+    private var summary: ExpenseSummary {
+        CalculateExpenseSummaryUseCase.summary(expenses: monthExpenses, incomes: monthIncomes)
+    }
+
+    private var categoryBreakdown: [CategoryTotal] { summary.categoryBreakdown }
+    private var topMerchants: [SpendingAggregates.MerchantTotal] { SpendingAggregates.topMerchants(in: monthExpenses) }
+
+    private func incomeTotal(monthsAgo: Int) -> Double {
+        let cal = Calendar.current
+        guard let target = cal.date(byAdding: .month, value: -monthsAgo, to: reportMonth) else { return 0 }
+        return incomes.filter { cal.isDate($0.date, equalTo: target, toGranularity: .month) }.reduce(0) { $0 + $1.income }
+    }
+
+    private var incomeChange: Double? {
+        let current = incomeTotal(monthsAgo: 0)
+        let previous = incomeTotal(monthsAgo: 1)
+        guard previous > 0 else { return nil }
+        return ((current - previous) / previous) * 100
+    }
+    private var expenseChange: Double? { SpendingAggregates.monthOverMonthChange(in: expenses, from: reportMonth) }
+
+    private var highestExpense: Expense? { monthExpenses.max { $0.price < $1.price } }
+
+    /// The category with the biggest month-over-month decrease — the "top saving category".
+    private var topSavingCategory: (name: String, change: Double)? {
+        let categories = Set(monthExpenses.map { $0.type.isEmpty ? "Uncategorised" : $0.type })
+        return categories
+            .compactMap { category -> (String, Double)? in
+                guard let change = SpendingAggregates.categoryMonthOverMonthChange(in: expenses, category: category, from: reportMonth), change < 0 else { return nil }
+                return (category, change)
+            }
+            .min { $0.1 < $1.1 }
+    }
+
+    /// The category with the biggest month-over-month increase, in absolute rupees — for the
+    /// "you spent more on X" insight line.
+    private var risingCategory: (name: String, amountChange: Double)? {
+        let categories = Set(monthExpenses.map { $0.type.isEmpty ? "Uncategorised" : $0.type })
+        let cal = Calendar.current
+        guard let lastMonth = cal.date(byAdding: .month, value: -1, to: reportMonth) else { return nil }
+        return categories
+            .compactMap { category -> (String, Double)? in
+                let current = monthExpenses.filter { $0.type == category }.reduce(0) { $0 + $1.price }
+                let previous = expenses
+                    .filter { $0.type == category && cal.isDate($0.date, equalTo: lastMonth, toGranularity: .month) }
+                    .reduce(0) { $0 + $1.price }
+                let delta = current - previous
+                guard previous > 0, delta > 0 else { return nil }
+                return (category, delta)
+            }
+            .max { $0.1 < $1.1 }
+    }
+
+    private var reportMonthTitle: String { reportMonth.formatted(.dateTime.month(.wide).year()) + " Report" }
+    private var reportMonthRange: String {
+        let cal = Calendar.current
+        let comps = cal.dateComponents([.year, .month], from: reportMonth)
+        guard let start = cal.date(from: comps),
+              let end = cal.date(byAdding: DateComponents(month: 1, day: -1), to: start) else { return "" }
+        let df = DateFormatter()
+        df.dateFormat = "MMM d"
+        let dy = DateFormatter(); dy.dateFormat = "MMM d, yyyy"
+        return "\(df.string(from: start)) – \(dy.string(from: end))"
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             Color.appBackground
@@ -69,11 +157,11 @@ struct ReportDetailView: View {
             Spacer()
 
             VStack(spacing: 2) {
-                Text("May Report")
+                Text(reportMonthTitle)
                     .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
 
-                Text("May 1 – May 31, 2025")
+                Text(reportMonthRange)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
             }
@@ -108,8 +196,8 @@ struct ReportDetailView: View {
                 iconColor: Color.appGreen,
                 bgColor: Color.appGreen.opacity(0.12),
                 title: "Total Income",
-                amount: "₹1,20,440",
-                comparison: "↑ 12.5% vs Apr",
+                amount: AppFormatter.currencyRounded(summary.totalIncome),
+                comparison: incomeChange.map { "\($0 >= 0 ? "↑" : "↓") \(String(format: "%.1f", abs($0)))% vs last month" },
                 comparisonColor: Color.appGreen
             )
 
@@ -119,8 +207,8 @@ struct ReportDetailView: View {
                 iconColor: Color.appExpenseRed,
                 bgColor: Color.appExpenseRed.opacity(0.12),
                 title: "Total Expenses",
-                amount: "₹99,560",
-                comparison: "↑ 8.5% vs Apr",
+                amount: AppFormatter.currencyRounded(summary.totalSpent),
+                comparison: expenseChange.map { "\($0 >= 0 ? "↑" : "↓") \(String(format: "%.1f", abs($0)))% vs last month" },
                 comparisonColor: Color.appExpenseRed
             )
 
@@ -143,7 +231,7 @@ struct ReportDetailView: View {
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
 
-                    Text("₹20,880")
+                    Text(AppFormatter.currencyRounded(summary.netBalance))
                         .font(.system(size: 17, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
                         .lineLimit(1)
@@ -155,21 +243,21 @@ struct ReportDetailView: View {
                         .font(.system(size: 10.5, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
 
-                    Text("17.4%")
+                    Text("\(String(format: "%.1f", summary.savingsRate))%")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
                 }
             }
             .padding(12)
             .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
         }
     }
 
     @ViewBuilder
-    private func metricCard(icon: String, iconColor: Color, bgColor: Color, title: String, amount: String, comparison: String, comparisonColor: Color) -> some View {
+    private func metricCard(icon: String, iconColor: Color, bgColor: Color, title: String, amount: String, comparison: String?, comparisonColor: Color) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Circle()
                 .fill(bgColor)
@@ -192,15 +280,17 @@ struct ReportDetailView: View {
                     .minimumScaleFactor(0.7)
             }
 
-            Text(comparison)
-                .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                .foregroundColor(comparisonColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+            if let comparison {
+                Text(comparison)
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                    .foregroundColor(comparisonColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
-        .background(Color.white)
+        .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
     }
@@ -267,17 +357,10 @@ struct ReportDetailView: View {
                 ZStack {
                     // Background Grid Lines
                     VStack(spacing: 0) {
-                        gridLine(label: "₹25K")
-                        Spacer()
-                        gridLine(label: "₹20K")
-                        Spacer()
-                        gridLine(label: "₹15K")
-                        Spacer()
-                        gridLine(label: "₹10K")
-                        Spacer()
-                        gridLine(label: "₹5K")
-                        Spacer()
-                        gridLine(label: "₹0")
+                        ForEach(Array(trendGridLabels.enumerated()), id: \.offset) { index, label in
+                            gridLine(label: label)
+                            if index < trendGridLabels.count - 1 { Spacer() }
+                        }
                     }
 
                     // Income Gradient & Line (Green)
@@ -288,7 +371,7 @@ struct ReportDetailView: View {
                         .stroke(Color.appGreen, lineWidth: 2.2)
 
                     ForEach(0..<incomePoints.count, id: \.self) { idx in
-                        Circle().fill(Color.white).frame(width: 6, height: 6)
+                        Circle().fill(Color.appSurface).frame(width: 6, height: 6)
                             .overlay(Circle().stroke(Color.appGreen, lineWidth: 2))
                             .position(incomePoints[idx])
                     }
@@ -301,7 +384,7 @@ struct ReportDetailView: View {
                         .stroke(Color.appExpenseRed, lineWidth: 2.2)
 
                     ForEach(0..<expensePoints.count, id: \.self) { idx in
-                        Circle().fill(Color.white).frame(width: 6, height: 6)
+                        Circle().fill(Color.appSurface).frame(width: 6, height: 6)
                             .overlay(Circle().stroke(Color.appExpenseRed, lineWidth: 2))
                             .position(expensePoints[idx])
                     }
@@ -311,11 +394,9 @@ struct ReportDetailView: View {
 
             // X-Axis Labels
             HStack {
-                Text("May 1").frame(maxWidth: .infinity)
-                Text("May 8").frame(maxWidth: .infinity)
-                Text("May 15").frame(maxWidth: .infinity)
-                Text("May 22").frame(maxWidth: .infinity)
-                Text("May 29").frame(maxWidth: .infinity)
+                ForEach(weeklyTrend) { point in
+                    Text(point.label).frame(maxWidth: .infinity)
+                }
             }
             .font(.system(size: 9.5, weight: .medium, design: .rounded))
             .foregroundColor(.secondary)
@@ -324,18 +405,45 @@ struct ReportDetailView: View {
             .padding(.leading, 32)
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
     }
 
-    // Fractional x/y positions for the two curves — invented to draw a plausible-looking
-    // trend rather than derived from real weekly sums, but kept as named constants (not
-    // inline in the view body) so the type-checker isn't asked to solve the whole chart,
-    // gutter offset included, as one expression.
-    private let incomeFractionsY: [CGFloat] = [0.35, 0.20, 0.32, 0.10, 0.24, 0.40, 0.22]
-    private let expenseFractionsY: [CGFloat] = [0.60, 0.48, 0.54, 0.42, 0.46, 0.52, 0.40]
-    private let trendFractionsX: [CGFloat] = [0.05, 0.20, 0.35, 0.50, 0.65, 0.80, 0.95]
+    // Fractional x/y positions for the two curves — derived from real weekly sums
+    // (`SpendingAggregates.weeklyTotals`), not invented. `fy` is inverted (0 = top of the
+    // chart) and given 5%/10% headroom top and bottom so the peak never touches the frame.
+    private var weeklyTrend: [SpendingAggregates.WeeklyTotal] {
+        SpendingAggregates.weeklyTotals(expenses: monthExpenses, incomes: monthIncomes, month: reportMonth)
+    }
+
+    private var trendMaxValue: Double {
+        max(weeklyTrend.map(\.income).max() ?? 0, weeklyTrend.map(\.expense).max() ?? 0, 1)
+    }
+
+    private var trendGridLabels: [String] {
+        (0...5).reversed().map { step in
+            "₹" + formatAmountShort(trendMaxValue * Double(step) / 5.0)
+        }
+    }
+
+    private var incomeFractionsY: [CGFloat] {
+        weeklyTrend.map { 0.05 + (1 - CGFloat($0.income / trendMaxValue)) * 0.85 }
+    }
+    private var expenseFractionsY: [CGFloat] {
+        weeklyTrend.map { 0.05 + (1 - CGFloat($0.expense / trendMaxValue)) * 0.85 }
+    }
+    private var trendFractionsX: [CGFloat] {
+        let count = weeklyTrend.count
+        guard count > 1 else { return [0.5] }
+        return (0..<count).map { 0.05 + (0.90 * CGFloat($0) / CGFloat(count - 1)) }
+    }
+
+    private func formatAmountShort(_ v: Double) -> String {
+        if v >= 100_000 { return String(format: "%.1fL", v / 100_000) }
+        if v >= 1_000 { return String(format: "%.0fK", v / 1_000) }
+        return "\(Int(v))"
+    }
 
     /// Maps fractional positions into the plot area, inset by `labelGutter` on the left —
     /// matching `gridLine`'s own reserved label column (26pt text + 6pt spacing). Without this
@@ -397,62 +505,54 @@ struct ReportDetailView: View {
                         .foregroundColor(.appGreen)
                 }
 
-                VStack(alignment: .center, spacing: 10) {
-                    // Donut Chart
-                    ZStack {
-                        Circle()
-                            .stroke(Color.appGreen, lineWidth: 10)
-                            .frame(width: 68, height: 68)
+                if categoryBreakdown.isEmpty {
+                    Text("No expenses yet this month")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 100)
+                } else {
+                    VStack(alignment: .center, spacing: 10) {
+                        // Donut Chart — real per-category share of this month's spending.
+                        ZStack {
+                            Circle().stroke(Color.gray.opacity(0.15), lineWidth: 10).frame(width: 68, height: 68)
+                            ForEach(Array(categoryDonutSegments.enumerated()), id: \.offset) { _, seg in
+                                Circle()
+                                    .trim(from: seg.start, to: seg.end)
+                                    .stroke(seg.color, lineWidth: 10)
+                                    .frame(width: 68, height: 68)
+                            }
 
-                        Circle().trim(from: 0.27, to: 0.455)
-                            .stroke(Color(red: 59/255, green: 130/255, blue: 246/255), lineWidth: 10)
-                            .frame(width: 68, height: 68)
+                            VStack(spacing: 0) {
+                                Text("Total")
+                                    .font(.system(size: 8.5, weight: .medium, design: .rounded))
+                                    .foregroundColor(.secondary)
 
-                        Circle().trim(from: 0.455, to: 0.56)
-                            .stroke(Color(red: 147/255, green: 51/255, blue: 234/255), lineWidth: 10)
-                            .frame(width: 68, height: 68)
-
-                        Circle().trim(from: 0.56, to: 0.635)
-                            .stroke(Color(red: 249/255, green: 115/255, blue: 22/255), lineWidth: 10)
-                            .frame(width: 68, height: 68)
-
-                        Circle().trim(from: 0.635, to: 0.706)
-                            .stroke(Color.appExpenseRed, lineWidth: 10)
-                            .frame(width: 68, height: 68)
-
-                        Circle().trim(from: 0.706, to: 1.0)
-                            .stroke(Color.gray.opacity(0.55), lineWidth: 10)
-                            .frame(width: 68, height: 68)
-
-                        VStack(spacing: 0) {
-                            Text("Total")
-                                .font(.system(size: 8.5, weight: .medium, design: .rounded))
-                                .foregroundColor(.secondary)
-
-                            Text("₹99,560")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
+                                Text(AppFormatter.currencyRounded(summary.totalSpent))
+                                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                            }
+                            .frame(width: 46)
                         }
-                        .frame(width: 46)
-                    }
 
-                    // Legend Column
-                    VStack(spacing: 6) {
-                        categoryLegend(color: Color.appGreen, name: "Food & Dining", percent: "26.9%")
-                        categoryLegend(color: Color(red: 59/255, green: 130/255, blue: 246/255), name: "Shopping", percent: "18.5%")
-                        categoryLegend(color: Color(red: 147/255, green: 51/255, blue: 234/255), name: "Utilities", percent: "10.3%")
-                        categoryLegend(color: Color(red: 249/255, green: 115/255, blue: 22/255), name: "Transport", percent: "7.4%")
-                        categoryLegend(color: Color.appExpenseRed, name: "Entertainment", percent: "7.1%")
-                        categoryLegend(color: Color.gray.opacity(0.6), name: "Others", percent: "14.8%")
+                        // Legend Column
+                        VStack(spacing: 6) {
+                            ForEach(Array(categoryBreakdown.prefix(6).enumerated()), id: \.offset) { index, cat in
+                                categoryLegend(
+                                    color: Self.categoryPalette[index % Self.categoryPalette.count],
+                                    name: cat.name,
+                                    percent: "\(String(format: "%.1f", cat.percentage))%"
+                                )
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
                 }
             }
             .padding(12)
             .frame(maxWidth: .infinity, minHeight: 240)
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
 
@@ -474,21 +574,35 @@ struct ReportDetailView: View {
                     .foregroundColor(.appGreen)
                 }
 
-                VStack(spacing: 6) {
-                    merchantRow(name: "DMart", amount: "₹12,450", percent: "12.5%", avatarType: .dmart)
-                    merchantRow(name: "Zomato", amount: "₹7,890", percent: "7.9%", avatarType: .zomato)
-                    merchantRow(name: "Amazon", amount: "₹6,450", percent: "6.5%", avatarType: .amazon)
-                    merchantRow(name: "HP Petrol Pump", amount: "₹4,330", percent: "4.4%", avatarType: .fuel)
-                    merchantRow(name: "Others", amount: "₹12,430", percent: "12.5%", avatarType: .others)
+                if topMerchants.isEmpty {
+                    Text("No merchant spending yet")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                } else {
+                    VStack(spacing: 6) {
+                        ForEach(topMerchants) { m in
+                            merchantRow(name: m.name, amount: AppFormatter.currencyRounded(m.amount), percent: "\(String(format: "%.1f", m.percentage))%")
+                        }
+                    }
                 }
 
                 Spacer(minLength: 0)
             }
             .padding(12)
             .frame(maxWidth: .infinity, minHeight: 240)
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
+        }
+    }
+
+    private var categoryDonutSegments: [(start: CGFloat, end: CGFloat, color: Color)] {
+        var cursor: CGFloat = 0
+        return categoryBreakdown.enumerated().map { index, cat in
+            let fraction = CGFloat(cat.percentage / 100.0)
+            let seg = (start: cursor, end: min(1, cursor + fraction), color: Self.categoryPalette[index % Self.categoryPalette.count])
+            cursor += fraction
+            return seg
         }
     }
 
@@ -511,32 +625,11 @@ struct ReportDetailView: View {
         }
     }
 
-    enum MerchantAvatar {
-        case dmart, zomato, amazon, fuel, others
-    }
-
     @ViewBuilder
-    private func merchantRow(name: String, amount: String, percent: String, avatarType: MerchantAvatar) -> some View {
+    private func merchantRow(name: String, amount: String, percent: String) -> some View {
         HStack(spacing: 6) {
-            Group {
-                switch avatarType {
-                case .dmart:
-                    Circle().fill(Color.appGreen.opacity(0.12)).frame(width: 20, height: 20)
-                        .overlay(Text("D").font(.system(size: 9, weight: .black, design: .rounded)).foregroundColor(Color.appGreenDeep))
-                case .zomato:
-                    Circle().fill(Color.appExpenseRed.opacity(0.12)).frame(width: 20, height: 20)
-                        .overlay(Text("z").font(.system(size: 9, weight: .black, design: .rounded)).foregroundColor(.red))
-                case .amazon:
-                    Circle().fill(Color.orange.opacity(0.14)).frame(width: 20, height: 20)
-                        .overlay(Text("a").font(.system(size: 11, weight: .black, design: .serif)).foregroundColor(.orange))
-                case .fuel:
-                    Circle().fill(Color(red: 224/255, green: 242/255, blue: 254/255)).frame(width: 20, height: 20)
-                        .overlay(Image(systemName: "fuelpump.fill").font(.system(size: 9, weight: .bold)).foregroundColor(.blue))
-                case .others:
-                    Circle().fill(Color(red: 239/255, green: 246/255, blue: 255/255)).frame(width: 20, height: 20)
-                        .overlay(Image(systemName: "ellipsis").font(.system(size: 9, weight: .bold)).foregroundColor(.blue))
-                }
-            }
+            Circle().fill(Color.appGreen.opacity(0.12)).frame(width: 20, height: 20)
+                .overlay(Image(systemName: "storefront.fill").font(.system(size: 9, weight: .bold)).foregroundColor(.appGreen))
 
             Text(name)
                 .font(.system(size: 10.5, weight: .bold, design: .rounded))
@@ -597,8 +690,8 @@ struct ReportDetailView: View {
                     iconColor: Color(red: 37/255, green: 99/255, blue: 235/255),
                     bgColor: Color(red: 239/255, green: 246/255, blue: 255/255),
                     header: "Top Category",
-                    mainText: "Food & Dining",
-                    detailText: "₹32,450 (26.9%)",
+                    mainText: categoryBreakdown.first?.name ?? "—",
+                    detailText: categoryBreakdown.first.map { "\(AppFormatter.currencyRounded($0.amount)) (\(String(format: "%.1f", $0.percentage))%)" } ?? "No spending yet",
                     detailColor: Color.appGreen
                 )
 
@@ -608,8 +701,8 @@ struct ReportDetailView: View {
                     iconColor: Color(red: 249/255, green: 115/255, blue: 22/255),
                     bgColor: Color(red: 254/255, green: 243/255, blue: 235/255),
                     header: "Highest Expense",
-                    mainText: "₹12,450",
-                    detailText: "at DMart",
+                    mainText: highestExpense.map { AppFormatter.currencyRounded($0.price) } ?? "—",
+                    detailText: highestExpense.map { "at \($0.merchant.isEmpty ? ($0.name.isEmpty ? $0.type : $0.name) : $0.merchant)" } ?? "No expenses yet",
                     detailColor: .secondary
                 )
 
@@ -619,8 +712,8 @@ struct ReportDetailView: View {
                     iconColor: Color.appGreen,
                     bgColor: Color.appGreen.opacity(0.12),
                     header: "Top Saving Category",
-                    mainText: "Entertainment",
-                    detailText: "7.1% less than Apr",
+                    mainText: topSavingCategory?.name ?? "—",
+                    detailText: topSavingCategory.map { "\(String(format: "%.1f", abs($0.change)))% less than last month" } ?? "Nothing decreased yet",
                     detailColor: Color.appGreen
                 )
             }
@@ -657,7 +750,7 @@ struct ReportDetailView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, minHeight: 116)
-        .background(Color.white)
+        .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
     }
@@ -669,79 +762,57 @@ struct ReportDetailView: View {
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .foregroundColor(.primary)
 
-            HStack(alignment: .top, spacing: 14) {
-                // Left Column
-                VStack(spacing: 12) {
-                    summaryCategoryRow(
-                        icon: "bag.fill",
-                        bgColor: Color.appGreen.opacity(0.12),
-                        iconColor: Color.appGreenDeep,
-                        name: "Food & Dining",
-                        amountText: "₹32,450 (26.9%)",
-                        progressColor: Color.appGreen,
-                        ratio: 0.8
-                    )
+            if categoryBreakdown.isEmpty {
+                Text("No expenses yet this month")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.appSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
+            } else {
+                let items = Array(categoryBreakdown.prefix(6).enumerated())
+                let maxAmount = categoryBreakdown.first?.amount ?? 1
+                let leftColumn = items.filter { $0.offset.isMultiple(of: 2) }
+                let rightColumn = items.filter { !$0.offset.isMultiple(of: 2) }
 
-                    summaryCategoryRow(
-                        icon: "cart.fill",
-                        bgColor: Color(red: 239/255, green: 246/255, blue: 255/255),
-                        iconColor: Color(red: 37/255, green: 99/255, blue: 235/255),
-                        name: "Shopping",
-                        amountText: "₹22,300 (18.8%)",
-                        progressColor: Color(red: 37/255, green: 99/255, blue: 235/255),
-                        ratio: 0.6
-                    )
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(spacing: 12) {
+                        ForEach(leftColumn, id: \.offset) { index, cat in
+                            summaryCategoryRow(
+                                icon: "tag.fill",
+                                bgColor: Self.categoryPalette[index % Self.categoryPalette.count].opacity(0.12),
+                                iconColor: Self.categoryPalette[index % Self.categoryPalette.count],
+                                name: cat.name,
+                                amountText: "\(AppFormatter.currencyRounded(cat.amount)) (\(String(format: "%.1f", cat.percentage))%)",
+                                progressColor: Self.categoryPalette[index % Self.categoryPalette.count],
+                                ratio: CGFloat(cat.amount / maxAmount)
+                            )
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
 
-                    summaryCategoryRow(
-                        icon: "star.fill",
-                        bgColor: Color.appExpenseRed.opacity(0.12),
-                        iconColor: Color.appExpenseRed,
-                        name: "Entertainment",
-                        amountText: "₹8,560 (7.1%)",
-                        progressColor: Color.appExpenseRed,
-                        ratio: 0.35
-                    )
+                    VStack(spacing: 12) {
+                        ForEach(rightColumn, id: \.offset) { index, cat in
+                            summaryCategoryRow(
+                                icon: "tag.fill",
+                                bgColor: Self.categoryPalette[index % Self.categoryPalette.count].opacity(0.12),
+                                iconColor: Self.categoryPalette[index % Self.categoryPalette.count],
+                                name: cat.name,
+                                amountText: "\(AppFormatter.currencyRounded(cat.amount)) (\(String(format: "%.1f", cat.percentage))%)",
+                                progressColor: Self.categoryPalette[index % Self.categoryPalette.count],
+                                ratio: CGFloat(cat.amount / maxAmount)
+                            )
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
-
-                // Right Column
-                VStack(spacing: 12) {
-                    summaryCategoryRow(
-                        icon: "bolt.fill",
-                        bgColor: Color(red: 243/255, green: 232/255, blue: 255/255),
-                        iconColor: Color(red: 147/255, green: 51/255, blue: 234/255),
-                        name: "Utilities",
-                        amountText: "₹12,450 (10.3%)",
-                        progressColor: Color(red: 147/255, green: 51/255, blue: 234/255),
-                        ratio: 0.45
-                    )
-
-                    summaryCategoryRow(
-                        icon: "bus.fill",
-                        bgColor: Color(red: 254/255, green: 243/255, blue: 235/255),
-                        iconColor: Color(red: 249/255, green: 115/255, blue: 22/255),
-                        name: "Transport",
-                        amountText: "₹8,900 (7.4%)",
-                        progressColor: Color(red: 249/255, green: 115/255, blue: 22/255),
-                        ratio: 0.35
-                    )
-
-                    summaryCategoryRow(
-                        icon: "ellipsis",
-                        bgColor: Color.gray.opacity(0.12),
-                        iconColor: .gray,
-                        name: "Others",
-                        amountText: "₹17,780 (14.8%)",
-                        progressColor: .gray,
-                        ratio: 0.5
-                    )
-                }
-                .frame(maxWidth: .infinity)
+                .padding(14)
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
             }
-            .padding(14)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
         }
     }
 
@@ -801,13 +872,23 @@ struct ReportDetailView: View {
                     .font(.system(size: 13.5, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
 
-                Text("• You spent ₹8,560 more on Food & Dining compared to last month.")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(.secondary)
+                if let rising = risingCategory {
+                    Text("• You spent \(AppFormatter.currencyRounded(rising.amountChange)) more on \(rising.name) compared to last month.")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
 
-                Text("• Entertainment spending has decreased by 12.6%.")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(.secondary)
+                if let saving = topSavingCategory {
+                    Text("• \(saving.name) spending has decreased by \(String(format: "%.1f", abs(saving.change)))%.")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+
+                if risingCategory == nil && topSavingCategory == nil {
+                    Text("Add a few more months of data to see spending trends here.")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
             }
 
             Spacer()
@@ -870,10 +951,11 @@ struct ReportDetailView: View {
 
     // MARK: - PDF Export Helper
     private func exportPDFReport() {
+        let reportTitle = "Financial Report - \(reportMonth.formatted(.dateTime.month(.wide).year()))"
         let pdfMetaData = [
             kCGPDFContextCreator: "PiggyFlow",
             kCGPDFContextAuthor: "PiggyFlow User",
-            kCGPDFContextTitle: "Financial Report - May 2025"
+            kCGPDFContextTitle: reportTitle
         ]
         let format = UIGraphicsPDFRendererFormat()
         format.documentInfo = pdfMetaData as [String: Any]
@@ -883,7 +965,7 @@ struct ReportDetailView: View {
         let data = renderer.pdfData { context in
             context.beginPage()
             var y: CGFloat = 40
-            "PiggyFlow Financial Report - May 2025".draw(at: CGPoint(x: 40, y: y), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 22)])
+            "PiggyFlow \(reportTitle)".draw(at: CGPoint(x: 40, y: y), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 22)])
             y += 40
             y = PDFTableRenderer.drawHeader(y: y)
             for exp in expenses.prefix(20) {

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 
 @Model
 final class Expense {
@@ -23,6 +24,14 @@ final class Expense {
     var account: String = ""
     var tags: [String] = []
 
+    /// How this record was created — `"manual"` (typed in) or `"receipt"` (scanned/uploaded
+    /// bill). Decides which editor (`EditExpenseView` vs `EditTransactionView`) a transaction
+    /// opens into. Defaults to `"manual"` so every record predating this field keeps the edit
+    /// path it already had rather than being silently reclassified.
+    var source: String = "manual"
+    /// Filename of an attached receipt image inside `ReceiptStorage`'s directory, empty if none.
+    var receiptFileName: String = ""
+
     init(
         type: String,
         emoji: String = "",
@@ -34,7 +43,9 @@ final class Expense {
         merchant: String = "",
         paymentMethod: String = "",
         account: String = "",
-        tags: [String] = []
+        tags: [String] = [],
+        source: String = "manual",
+        receiptFileName: String = ""
     ) {
         self.type = type
         self.emoji = emoji
@@ -47,6 +58,8 @@ final class Expense {
         self.paymentMethod = paymentMethod
         self.account = account
         self.tags = tags
+        self.source = source
+        self.receiptFileName = receiptFileName
     }
 }
 
@@ -103,6 +116,50 @@ final class Income {
     }
 }
 
+/// A user's bank account, card, wallet, or cash — lives in its own local-only store via
+/// `AccountManager`, the same pattern `UserCategory`/`UserCategoryManager` already use, rather
+/// than the main synced container (see `AccountManager` for why).
+@Model
+final class Account {
+    var id: String = UUID().uuidString
+    var name: String = ""
+    /// `AccountCategory.rawValue` — drives icon/colour/caption at render time, so those never
+    /// need to be stored (and `iconColor` is always `.white` in every real construction, so it
+    /// isn't stored at all).
+    var categoryRaw: String = AccountCategory.bank.rawValue
+    var subType: String = "Savings Account"
+    /// Masked, e.g. "•••• 1234" — empty for cash/wallets.
+    var accountNumber: String = ""
+    /// Signed: negative for a credit card's outstanding balance.
+    var balance: Double = 0
+    var isCreditCard: Bool = false
+    /// Whether this account's balance counts toward the app's net-balance figures.
+    var includeInNetBalance: Bool = true
+
+    init(
+        name: String,
+        categoryRaw: String = AccountCategory.bank.rawValue,
+        subType: String = "Savings Account",
+        accountNumber: String = "",
+        balance: Double = 0,
+        isCreditCard: Bool = false,
+        includeInNetBalance: Bool = true
+    ) {
+        self.name = name
+        self.categoryRaw = categoryRaw
+        self.subType = subType
+        self.accountNumber = accountNumber
+        self.balance = balance
+        self.isCreditCard = isCreditCard
+        self.includeInNetBalance = includeInNetBalance
+    }
+
+    var category: AccountCategory { AccountCategory(rawValue: categoryRaw) ?? .other }
+    var iconName: String { category.iconName }
+    var iconBgColor: Color { category.iconBgColor }
+    var caption: String { isCreditCard ? "Outstanding" : "Available Balance" }
+}
+
 @Model
 final class UserCategory {
     var id: String = UUID().uuidString
@@ -120,13 +177,24 @@ final class UserCategory {
 @Model
 final class TrackerRecord {
     var id: String = UUID().uuidString
-    var type: String = "subscription" // subscription | emi | bill
+    var type: String = "subscription" // subscription | emi | bill | budget | goal
     var name: String = ""
     var subType: String = "monthly" // monthly | yearly
     var amount: Double = 0
     var dueDate: Date = Date()
     var logoUrl: String = ""
     var isPaid: Bool = false
+
+    /// Budget's spending-category or Goal's goalCategory — shared field, blank for
+    /// subscription/EMI. Not pushed to Firestore yet (see `CloudSyncManager`'s tracker sync
+    /// blocks) — local-only for now, same as `Account`.
+    var category: String = ""
+    /// Goal progress-so-far, toward `amount`. Unused (0) outside goal trackers. Not pushed to
+    /// Firestore yet — see `CloudSyncManager`.
+    var currentAmount: Double = 0
+    /// Free-form notes from the Add Tracker form. Not pushed to Firestore yet — see
+    /// `CloudSyncManager`.
+    var notes: String = ""
 
     init(
         type: String = "subscription",
@@ -135,7 +203,10 @@ final class TrackerRecord {
         amount: Double = 0,
         dueDate: Date = Date(),
         logoUrl: String = "",
-        isPaid: Bool = false
+        isPaid: Bool = false,
+        category: String = "",
+        currentAmount: Double = 0,
+        notes: String = ""
     ) {
         self.type = type
         self.name = name
@@ -144,5 +215,8 @@ final class TrackerRecord {
         self.dueDate = dueDate
         self.logoUrl = logoUrl
         self.isPaid = isPaid
+        self.category = category
+        self.currentAmount = currentAmount
+        self.notes = notes
     }
 }

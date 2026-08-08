@@ -21,6 +21,9 @@ struct ScanView: View {
 
     @State private var isExtracting = false
     @State private var parsedItems: [ParsedItem]?
+    /// The photo(s) OCR just read, kept alongside `parsedItems` so the review sheet can save
+    /// the actual bill as the resulting expenses' receipt rather than discarding it after scan.
+    @State private var scannedImages: [UIImage] = []
     @State private var showDocumentScanner = false
     @State private var showManualEntry = false
     @State private var photoSelection: PhotosPickerItem?
@@ -50,10 +53,10 @@ struct ScanView: View {
             .ignoresSafeArea()
         }
         .sheet(item: Binding(
-            get: { parsedItems.map { IdentifiedItems(items: $0) } },
+            get: { parsedItems.map { IdentifiedItems(items: $0, images: scannedImages) } },
             set: { if $0 == nil { parsedItems = nil } }
         )) { wrapper in
-            ScannedItemsReviewSheet(items: wrapper.items) { savedCount in
+            ScannedItemsReviewSheet(items: wrapper.items, images: wrapper.images) { savedCount in
                 confirmation = savedCount > 0
                     ? "Added \(savedCount) expense\(savedCount == 1 ? "" : "s") from your bill."
                     : nil
@@ -563,6 +566,7 @@ struct ScanView: View {
         isExtracting = true
         let items = await extractItems.execute(images: images)
         isExtracting = false
+        scannedImages = images
         // Always show the review sheet — an empty result still needs explaining.
         parsedItems = items
     }
@@ -572,6 +576,7 @@ struct ScanView: View {
 private struct IdentifiedItems: Identifiable {
     let id = UUID()
     let items: [ParsedItem]
+    let images: [UIImage]
 }
 
 #Preview {
