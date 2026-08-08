@@ -171,12 +171,20 @@ struct AddExpenseBottomSheetView: View {
                 .transition(.move(edge: .trailing))
                 .zIndex(1)
             }
+
+            if showAddAccountSheet {
+                // Same push-style overlay as Income/Expense above, instead of a `.sheet`.
+                AddAccountView(
+                    onBackOverride: {
+                        withAnimation(.easeInOut(duration: 0.28)) { showAddAccountSheet = false }
+                    }
+                )
+                .transition(.move(edge: .trailing))
+                .zIndex(1)
+            }
         }
         .sheet(isPresented: $showScanSheet) {
             ScanView()
-        }
-        .sheet(isPresented: $showAddAccountSheet) {
-            AddAccountView()
         }
         .sheet(isPresented: $showAddCategorySheet) {
             AddCategorySheet(
@@ -246,7 +254,7 @@ struct AddExpenseBottomSheetView: View {
                             title: "Add Transfer",
                             subtitle: "Transfer between accounts"
                         ) {
-                            showAddAccountSheet = true
+                            withAnimation(.easeInOut(duration: 0.28)) { showAddAccountSheet = true }
                         }
 
                         addOptionCard(
@@ -352,7 +360,7 @@ struct AddExpenseBottomSheetView: View {
             }
             .padding(11)
             .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
         }
@@ -406,7 +414,7 @@ struct AddExpenseBottomSheetView: View {
                 .foregroundColor(.appGreenDeep)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(Color.white)
+                .background(Color.appSurface)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .shadow(color: Color.black.opacity(0.04), radius: 3, x: 0, y: 1)
             }
@@ -558,7 +566,7 @@ struct AddExpenseBottomSheetView: View {
                             .textFieldStyle(.roundedBorder)
                     }
                     .padding()
-                    .background(Color.white)
+                    .background(Color.appSurface)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .padding(.horizontal)
 

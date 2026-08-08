@@ -9,24 +9,8 @@ struct UpcomingPaymentsView: View {
 
     @State private var showAddTrackerSheet: Bool = false
 
-    // Sample fallback records when SwiftData is empty
     private var allPaymentRecords: [TrackerRecord] {
-        if !trackerRecords.isEmpty {
-            return trackerRecords.sorted { $0.dueDate < $1.dueDate }
-        }
-        let cal = Calendar.current
-        let today = Date()
-        return [
-            TrackerRecord(type: "subscription", name: "Netflix", subType: "Entertainment", amount: 649, dueDate: cal.date(byAdding: .day, value: 2, to: today) ?? today, logoUrl: ""),
-            TrackerRecord(type: "subscription", name: "Spotify Premium", subType: "Music", amount: 119, dueDate: cal.date(byAdding: .day, value: 4, to: today) ?? today, logoUrl: ""),
-            TrackerRecord(type: "bill", name: "Mobile Phone Bill", subType: "Airtel", amount: 599, dueDate: cal.date(byAdding: .day, value: 5, to: today) ?? today),
-            TrackerRecord(type: "bill", name: "Electricity Bill", subType: "TNEB", amount: 1245, dueDate: cal.date(byAdding: .day, value: 6, to: today) ?? today),
-            TrackerRecord(type: "emi", name: "HDFC Home Loan EMI", subType: "Home Loan", amount: 28500, dueDate: cal.date(byAdding: .day, value: 9, to: today) ?? today),
-            TrackerRecord(type: "subscription", name: "Amazon Prime", subType: "Shopping", amount: 299, dueDate: cal.date(byAdding: .day, value: 10, to: today) ?? today, logoUrl: ""),
-            TrackerRecord(type: "bill", name: "Gas Bill", subType: "HP Gas", amount: 1100, dueDate: cal.date(byAdding: .day, value: 11, to: today) ?? today),
-            TrackerRecord(type: "bill", name: "Internet Bill", subType: "Jio Fiber", amount: 799, dueDate: cal.date(byAdding: .day, value: 12, to: today) ?? today),
-            TrackerRecord(type: "subscription", name: "Swiggy One", subType: "Food", amount: 149, dueDate: cal.date(byAdding: .day, value: 14, to: today) ?? today, logoUrl: "")
-        ]
+        trackerRecords.sorted { $0.dueDate < $1.dueDate }
     }
 
     private var dueSoonRecords: [TrackerRecord] {
@@ -86,6 +70,14 @@ struct UpcomingPaymentsView: View {
                     // Due This Month Section
                     if !dueThisMonthRecords.isEmpty {
                         dueThisMonthSection
+                    }
+
+                    if allPaymentRecords.isEmpty {
+                        Text("No upcoming payments yet")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 24)
                     }
 
                     // Never Miss a Payment Banner
@@ -228,7 +220,7 @@ struct UpcomingPaymentsView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
         .padding(.horizontal, 4)
-        .background(Color.white)
+        .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
     }
@@ -254,7 +246,7 @@ struct UpcomingPaymentsView: View {
                     }
                 }
             }
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
         }
@@ -316,7 +308,7 @@ struct UpcomingPaymentsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(Color.white)
+        .background(Color.appSurface)
     }
 
     // MARK: - Due This Month Section
@@ -344,7 +336,7 @@ struct UpcomingPaymentsView: View {
                     }
                 }
             }
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
         }
@@ -415,7 +407,7 @@ struct UpcomingPaymentsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(Color.white)
+        .background(Color.appSurface)
     }
 
     // MARK: - Payment Avatar

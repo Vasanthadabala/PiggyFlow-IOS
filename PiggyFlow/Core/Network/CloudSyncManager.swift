@@ -138,6 +138,9 @@ final class CloudSyncManager: ObservableObject {
         upsert(
             kind: .tracker,
             id: tracker.id,
+            // NOTE: category/currentAmount/notes are intentionally local-only for now (see
+            // TrackerRecord) — not included in this field list, so they won't sync across
+            // devices yet.
             data: [
                 "id": tracker.id,
                 "type": tracker.type,
@@ -293,6 +296,8 @@ final class CloudSyncManager: ObservableObject {
             let trackers = try context.fetch(FetchDescriptor<TrackerRecord>())
             for tracker in trackers {
                 let dirtyAt = dirtyDate(kind: .tracker, id: tracker.id) ?? Date()
+                // NOTE: category/currentAmount/notes are intentionally local-only for now — not
+                // included in this field list, so they won't sync across devices yet.
                 let data: [String: Any] = [
                     "id": tracker.id,
                     "type": tracker.type,
@@ -671,6 +676,9 @@ final class CloudSyncManager: ObservableObject {
                         return created
                     }()
 
+                    // NOTE: category/currentAmount/notes are intentionally local-only for now —
+                    // not part of this remote payload, so a value set on another device won't
+                    // land here.
                     tracker.type = stringValue(from: data["type"])
                     tracker.name = stringValue(from: data["name"])
                     tracker.subType = stringValue(from: data["subType"])
@@ -717,6 +725,8 @@ final class CloudSyncManager: ObservableObject {
                     return created
                 }()
 
+                // NOTE: category/currentAmount/notes are intentionally local-only for now — not
+                // part of this remote payload, so a value set on another device won't land here.
                 tracker.type = stringValue(from: data["type"])
                 tracker.name = stringValue(from: data["name"])
                 tracker.subType = stringValue(from: data["subType"])

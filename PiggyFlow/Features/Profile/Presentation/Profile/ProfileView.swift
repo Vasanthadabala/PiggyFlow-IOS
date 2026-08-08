@@ -42,7 +42,7 @@ struct ProfileView: View {
     }
 
     private var savingsRatePercentage: Double {
-        totalIncome > 0 ? max(0, ((totalIncome - totalExpenses) / totalIncome) * 100) : 32.0
+        totalIncome > 0 ? max(0, min(100, ((totalIncome - totalExpenses) / totalIncome) * 100)) : 0
     }
 
     var body: some View {
@@ -152,7 +152,7 @@ struct ProfileView: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.primary)
                     .frame(width: 38, height: 38)
-                    .background(Color.white)
+                    .background(Color.appSurface)
                     .clipShape(Circle())
                     .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
             }
@@ -228,7 +228,7 @@ struct ProfileView: View {
                     .foregroundColor(.secondary.opacity(0.6))
             }
             .padding(14)
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
         }
@@ -261,7 +261,7 @@ struct ProfileView: View {
                     iconColor: Color.appGreen,
                     bgColor: Color.appGreen.opacity(0.12),
                     title: "Net Balance",
-                    value: "₹\(Int(netBalance > 0 ? netBalance : 120500).formatted())",
+                    value: "₹\(Int(netBalance).formatted())",
                     valueColor: Color.appGreenDeep
                 )
 
@@ -273,7 +273,7 @@ struct ProfileView: View {
                     iconColor: .blue,
                     bgColor: Color.blue.opacity(0.12),
                     title: "Total Income",
-                    value: "₹\(Int(totalIncome > 0 ? totalIncome : 240000).formatted())",
+                    value: "₹\(Int(totalIncome).formatted())",
                     valueColor: .blue
                 )
 
@@ -285,7 +285,7 @@ struct ProfileView: View {
                     iconColor: Color.appExpenseRed,
                     bgColor: Color.appExpenseRed.opacity(0.12),
                     title: "Total Expenses",
-                    value: "₹\(Int(totalExpenses > 0 ? totalExpenses : 119500).formatted())",
+                    value: "₹\(Int(totalExpenses).formatted())",
                     valueColor: Color.appExpenseRed
                 )
 
@@ -303,7 +303,7 @@ struct ProfileView: View {
             }
         }
         .padding(14)
-        .background(Color.white)
+        .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
     }
@@ -393,7 +393,7 @@ struct ProfileView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
         }
@@ -434,7 +434,7 @@ struct ProfileView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
         }
@@ -468,7 +468,7 @@ struct ProfileView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
         }
@@ -490,7 +490,7 @@ struct ProfileView: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 48)
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
         }
@@ -589,72 +589,89 @@ struct ProfileView: View {
 }
 
 // MARK: - Dummy Destination Views for Navigation Links
+
+/// Shared shell for the Profile sections that have no real screen yet. Bare `Text` bodies
+/// defaulted to the system's white page, which read as a different app against the
+/// `Color.appBackground` canvas every built-out screen uses.
+private struct ProfileSectionPlaceholder: View {
+    let title: String
+    let heading: String
+
+    var body: some View {
+        ZStack {
+            Color.appBackground
+                .ignoresSafeArea()
+
+            VStack(spacing: 6) {
+                Text(heading)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+
+                Text("Coming soon")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .navigationTitle(title)
+    }
+}
+
 struct EditProfileView: View {
     var body: some View {
-        Text("Personal Information")
-            .navigationTitle("Personal Info")
+        ProfileSectionPlaceholder(title: "Personal Info", heading: "Personal Information")
     }
 }
 
 struct SecurityView: View {
     var body: some View {
-        Text("Security Settings")
-            .navigationTitle("Security")
+        ProfileSectionPlaceholder(title: "Security", heading: "Security Settings")
     }
 }
 
 struct CloudSyncView: View {
     var body: some View {
-        Text("Cloud Sync Settings")
-            .navigationTitle("Cloud Sync")
+        ProfileSectionPlaceholder(title: "Cloud Sync", heading: "Cloud Sync Settings")
     }
 }
 
 struct PremiumView: View {
     var body: some View {
-        Text("Premium Membership")
-            .navigationTitle("Premium")
+        ProfileSectionPlaceholder(title: "Premium", heading: "Premium Membership")
     }
 }
 
 struct NotificationSettingsView: View {
     var body: some View {
-        Text("Notification Preferences")
-            .navigationTitle("Notifications")
+        ProfileSectionPlaceholder(title: "Notifications", heading: "Notification Preferences")
     }
 }
 
 struct AppearanceView: View {
     var body: some View {
-        Text("Appearance Options")
-            .navigationTitle("Appearance")
+        ProfileSectionPlaceholder(title: "Appearance", heading: "Appearance Options")
     }
 }
 
 struct CurrencyView: View {
     var body: some View {
-        Text("Currency Options")
-            .navigationTitle("Currency")
+        ProfileSectionPlaceholder(title: "Currency", heading: "Currency Options")
     }
 }
 
 struct LanguageView: View {
     var body: some View {
-        Text("Language Options")
-            .navigationTitle("Language")
+        ProfileSectionPlaceholder(title: "Language", heading: "Language Options")
     }
 }
 
 struct HelpCenterView: View {
     var body: some View {
-        Text("Help Center & FAQs")
-            .navigationTitle("Help Center")
+        ProfileSectionPlaceholder(title: "Help Center", heading: "Help Center & FAQs")
     }
 }
 
 struct ContactSupportView: View {
     var body: some View {
-        Text("Contact Support")
-            .navigationTitle("Contact Support")
+        ProfileSectionPlaceholder(title: "Contact Support", heading: "Contact Support")
     }
 }

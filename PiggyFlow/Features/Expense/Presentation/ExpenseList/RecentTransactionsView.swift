@@ -201,7 +201,7 @@ struct RecentTransactionsView: View {
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.secondary)
                 }
-                Text("5 Accounts")
+                Text("\(AccountManager.shared.accounts.count) Accounts")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
             }
@@ -212,7 +212,7 @@ struct RecentTransactionsView: View {
                 Text("Total Spent")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
-                Text("₹\(String(format: "%.2f", totalSpent > 0 ? totalSpent : 18_750.60))")
+                Text("₹\(String(format: "%.2f", totalSpent))")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                 HStack(spacing: 3) {
@@ -344,7 +344,7 @@ struct RecentTransactionsView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color(.systemGroupedBackground))
+            .background(Color.appBackground)
         }
         .buttonStyle(.plain)
     }
@@ -370,12 +370,14 @@ struct RecentTransactionsView: View {
                     Text(item.type.isEmpty ? "General" : item.type)
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
-                    Text("•")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                    Text("HDFC Bank")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
+                    if !item.account.isEmpty {
+                        Text("•")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Text(item.account)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
 

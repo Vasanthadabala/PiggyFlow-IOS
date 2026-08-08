@@ -18,7 +18,40 @@ struct ExpensesView: View {
     }
 
     private var totalExpensesAmount: Double {
-        !expenses.isEmpty ? expenses.reduce(0) { $0 + $1.price } : 120_440
+        expenses.reduce(0) { $0 + $1.price }
+    }
+
+    // MARK: - Real data
+
+    private static let categoryPalette: [Color] = [
+        .appGreen,
+        Color(red: 132/255, green: 204/255, blue: 22/255),
+        Color(red: 234/255, green: 179/255, blue: 8/255),
+        Color(red: 249/255, green: 115/255, blue: 22/255),
+        Color(red: 236/255, green: 72/255, blue: 153/255),
+        Color(red: 59/255, green: 130/255, blue: 246/255)
+    ]
+
+    private var categoryBreakdown: [CategoryTotal] {
+        CalculateExpenseSummaryUseCase.categoryBreakdown(of: expenses, total: totalExpensesAmount)
+    }
+
+    private var topCategory: CategoryTotal? { categoryBreakdown.first }
+    private var expenseChange: Double? { SpendingAggregates.monthOverMonthChange(in: expenses) }
+    private var topMerchants: [SpendingAggregates.MerchantTotal] { SpendingAggregates.topMerchants(in: expenses, limit: 5) }
+
+    private var recentExpenses: [Expense] {
+        expenses.sorted { $0.date > $1.date }.prefix(4).map { $0 }
+    }
+
+    private var categoryDonutSegments: [(start: CGFloat, end: CGFloat, color: Color)] {
+        var cursor: CGFloat = 0
+        return categoryBreakdown.enumerated().map { index, cat in
+            let fraction = CGFloat(cat.percentage / 100.0)
+            let seg = (start: cursor, end: min(1, cursor + fraction), color: Self.categoryPalette[index % Self.categoryPalette.count])
+            cursor += fraction
+            return seg
+        }
     }
 
     var body: some View {
@@ -151,14 +184,16 @@ struct ExpensesView: View {
                 .padding(.vertical, 4)
 
                 // Month-over-Month Comparison Label
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.down")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(Color.appGreen)
+                if let expenseChange {
+                    HStack(spacing: 4) {
+                        Image(systemName: expenseChange <= 0 ? "arrow.down" : "arrow.up")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(expenseChange <= 0 ? Color.appGreen : Color.appExpenseRed)
 
-                    Text("8.5% less than Apr 1 – Apr 30")
-                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
-                        .foregroundColor(Color.appGreen)
+                        Text("\(String(format: "%.1f", abs(expenseChange)))% \(expenseChange <= 0 ? "less" : "more") than last month")
+                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                            .foregroundColor(expenseChange <= 0 ? Color.appGreen : Color.appExpenseRed)
+                    }
                 }
             }
 
@@ -166,55 +201,38 @@ struct ExpensesView: View {
 
             // Right Column: Donut Pie Chart + Center Text
             ZStack {
-                // Donut Ring Segments
                 Circle()
-                    .stroke(Color.appGreen, lineWidth: 11)
+                    .stroke(Color.gray.opacity(0.15), lineWidth: 11)
                     .frame(width: 98, height: 98)
 
-                Circle()
-                    .trim(from: 0.27, to: 0.45)
-                    .stroke(Color(red: 132/255, green: 204/255, blue: 22/255), lineWidth: 11)
-                    .frame(width: 98, height: 98)
-
-                Circle()
-                    .trim(from: 0.45, to: 0.60)
-                    .stroke(Color(red: 234/255, green: 179/255, blue: 8/255), lineWidth: 11)
-                    .frame(width: 98, height: 98)
-
-                Circle()
-                    .trim(from: 0.60, to: 0.70)
-                    .stroke(Color(red: 249/255, green: 115/255, blue: 22/255), lineWidth: 11)
-                    .frame(width: 98, height: 98)
-
-                Circle()
-                    .trim(from: 0.70, to: 0.78)
-                    .stroke(Color(red: 236/255, green: 72/255, blue: 153/255), lineWidth: 11)
-                    .frame(width: 98, height: 98)
-
-                Circle()
-                    .trim(from: 0.78, to: 1.0)
-                    .stroke(Color(red: 59/255, green: 130/255, blue: 246/255), lineWidth: 11)
-                    .frame(width: 98, height: 98)
+                ForEach(Array(categoryDonutSegments.enumerated()), id: \.offset) { _, seg in
+                    Circle()
+                        .trim(from: seg.start, to: seg.end)
+                        .stroke(seg.color, lineWidth: 11)
+                        .frame(width: 98, height: 98)
+                }
 
                 // Center Text inside Donut
                 VStack(spacing: 1) {
                     Text("Top Category")
                         .font(.system(size: 9.5, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
-                    Text("Food & Dining")
+                    Text(topCategory?.name ?? "No spending")
                         .font(.system(size: 10.5, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                    Text("26.9%")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundColor(Color.appGreen)
+                    if let topCategory {
+                        Text("\(String(format: "%.1f", topCategory.percentage))%")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(Color.appGreen)
+                    }
                 }
                 .frame(width: 74)
             }
         }
         .padding(18)
-        .background(Color.white)
+        .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
     }
@@ -322,99 +340,43 @@ struct ExpensesView: View {
                 }
             }
 
-            VStack(spacing: 0) {
-                transactionRow(
-                    merchantName: "DMart",
-                    categoryAndAccount: "Shopping  •  HDFC Bank",
-                    timestamp: "May 31, 2025  •  08:45 PM",
-                    amount: "-₹1,245.00",
-                    avatarType: .dmart
-                )
-
-                Divider().padding(.leading, 64)
-
-                transactionRow(
-                    merchantName: "Zomato",
-                    categoryAndAccount: "Food & Dining  •  HDFC Card",
-                    timestamp: "May 30, 2025  •  07:15 PM",
-                    amount: "-₹450.00",
-                    avatarType: .zomato
-                )
-
-                Divider().padding(.leading, 64)
-
-                transactionRow(
-                    merchantName: "Amazon",
-                    categoryAndAccount: "Shopping  •  HDFC Card",
-                    timestamp: "May 29, 2025  •  09:20 PM",
-                    amount: "-₹2,199.00",
-                    avatarType: .amazon
-                )
-
-                Divider().padding(.leading, 64)
-
-                transactionRow(
-                    merchantName: "HP Petrol Pump",
-                    categoryAndAccount: "Fuel  •  HDFC Bank",
-                    timestamp: "May 29, 2025  •  05:40 PM",
-                    amount: "-₹330.50",
-                    avatarType: .fuel
-                )
+            if recentExpenses.isEmpty {
+                Text("No transactions yet")
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
+                    .background(Color.appSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(recentExpenses.enumerated()), id: \.element.id) { index, expense in
+                        transactionRow(expense)
+                        if index != recentExpenses.count - 1 {
+                            Divider().padding(.leading, 64)
+                        }
+                    }
+                }
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
             }
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
         }
     }
 
-    enum MerchantAvatar {
-        case dmart, zomato, amazon, fuel
-    }
-
     @ViewBuilder
-    private func transactionRow(merchantName: String, categoryAndAccount: String, timestamp: String, amount: String, avatarType: MerchantAvatar) -> some View {
-        NavigationLink(destination: RecentTransactionsView().hidesTabBarOnPush()) {
+    private func transactionRow(_ expense: Expense) -> some View {
+        let merchantName = expense.name.isEmpty ? expense.type : expense.name
+        let categoryAndAccount = expense.account.isEmpty ? expense.type : "\(expense.type)  •  \(expense.account)"
+
+        NavigationLink(destination: TransactionDetailView(item: .expense(expense)).hidesTabBarOnPush()) {
             HStack(spacing: 12) {
-                // Merchant Icon Avatar
-                Group {
-                    switch avatarType {
-                    case .dmart:
-                        Circle()
-                            .fill(Color(red: 220/255, green: 245/255, blue: 225/255))
-                            .frame(width: 42, height: 42)
-                            .overlay(
-                                Text("DMart")
-                                    .font(.system(size: 9.5, weight: .black, design: .rounded))
-                                    .foregroundColor(Color(red: 22/255, green: 130/255, blue: 60/255))
-                            )
-                    case .zomato:
-                        Circle()
-                            .fill(Color(red: 254/255, green: 226/255, blue: 226/255))
-                            .frame(width: 42, height: 42)
-                            .overlay(
-                                Text("zomato")
-                                    .font(.system(size: 9.5, weight: .black, design: .rounded))
-                                    .foregroundColor(.red)
-                            )
-                    case .amazon:
-                        Circle()
-                            .fill(Color.orange.opacity(0.14))
-                            .frame(width: 42, height: 42)
-                            .overlay(
-                                Text("a")
-                                    .font(.system(size: 20, weight: .black, design: .serif))
-                                    .foregroundColor(.orange)
-                            )
-                    case .fuel:
-                        Circle()
-                            .fill(Color(red: 224/255, green: 242/255, blue: 254/255))
-                            .frame(width: 42, height: 42)
-                            .overlay(
-                                Image(systemName: "fuelpump.fill")
-                                    .font(.system(size: 16, weight: .bold))
-                                    .foregroundColor(Color(red: 2/255, green: 132/255, blue: 199/255))
-                            )
-                    }
+                ZStack {
+                    Circle()
+                        .fill(Color.appExpenseRed.opacity(0.10))
+                        .frame(width: 42, height: 42)
+                    Text(expense.emoji.isEmpty ? String(merchantName.prefix(2)).uppercased() : expense.emoji)
+                        .font(.system(size: 16))
                 }
 
                 // Middle Info
@@ -427,7 +389,7 @@ struct ExpensesView: View {
                         .font(.system(size: 11.5, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
 
-                    Text(timestamp)
+                    Text(expense.date.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
                         .font(.system(size: 10.5, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary.opacity(0.8))
                 }
@@ -436,7 +398,7 @@ struct ExpensesView: View {
 
                 // Right Amount & Chevron
                 HStack(spacing: 4) {
-                    Text(amount)
+                    Text(AppFormatter.signedCurrency(expense.price, isIncome: false))
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
 
@@ -472,29 +434,43 @@ struct ExpensesView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        categoryCard(icon: "fork.knife", iconColor: Color.appGreen, bgColor: Color(red: 232/255, green: 247/255, blue: 238/255), title: "Food & Dining", amount: "₹32,450", percent: "26.9%")
-                        categoryCard(icon: "bag.fill", iconColor: Color(red: 147/255, green: 51/255, blue: 234/255), bgColor: Color(red: 243/255, green: 232/255, blue: 255/255), title: "Shopping", amount: "₹22,300", percent: "18.5%")
-                        categoryCard(icon: "fuelpump.fill", iconColor: Color(red: 249/255, green: 115/255, blue: 22/255), bgColor: Color(red: 254/255, green: 243/255, blue: 235/255), title: "Fuel", amount: "₹18,650", percent: "15.5%")
-                        categoryCard(icon: "bolt.fill", iconColor: Color(red: 234/255, green: 179/255, blue: 8/255), bgColor: Color(red: 254/255, green: 249/255, blue: 231/255), title: "Utilities", amount: "₹12,450", percent: "10.3%")
-                        categoryCard(icon: "film.fill", iconColor: Color(red: 236/255, green: 72/255, blue: 153/255), bgColor: Color(red: 252/255, green: 231/255, blue: 243/255), title: "Entertainment", amount: "₹8,900", percent: "7.4%")
-                        categoryCard(icon: "ellipsis", iconColor: Color(red: 37/255, green: 99/255, blue: 235/255), bgColor: Color(red: 239/255, green: 246/255, blue: 255/255), title: "Others", amount: "₹25,690", percent: "21.4%")
+            if categoryBreakdown.isEmpty {
+                Text("No spending yet")
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(Array(categoryBreakdown.prefix(6).enumerated()), id: \.offset) { index, cat in
+                                let color = Self.categoryPalette[index % Self.categoryPalette.count]
+                                categoryCard(
+                                    icon: "tag.fill",
+                                    iconColor: color,
+                                    bgColor: color.opacity(0.12),
+                                    title: cat.name,
+                                    amount: AppFormatter.currencyRounded(cat.amount),
+                                    percent: "\(String(format: "%.1f", cat.percentage))%"
+                                )
+                            }
+                        }
+                        .padding(.vertical, 2)
                     }
-                    .padding(.vertical, 2)
-                }
 
-                // Custom Green Progress Line Indicator underneath
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.gray.opacity(0.15))
+                    // Highlights how much of total spend the top category alone accounts for.
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.gray.opacity(0.15))
+                            .frame(height: 3)
+                        GeometryReader { geo in
+                            Capsule()
+                                .fill(Color.appGreen)
+                                .frame(width: geo.size.width * CGFloat((topCategory?.percentage ?? 0) / 100), height: 3)
+                        }
                         .frame(height: 3)
-                    Capsule()
-                        .fill(Color.appGreen)
-                        .frame(width: 80, height: 3)
+                    }
+                    .padding(.horizontal, 4)
                 }
-                .padding(.horizontal, 4)
             }
         }
     }
@@ -527,7 +503,7 @@ struct ExpensesView: View {
                     .foregroundColor(Color.appGreen)
             }
             .frame(width: 96, height: 122)
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
         }
@@ -555,77 +531,41 @@ struct ExpensesView: View {
                 }
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    merchantCard(name: "Amazon", amount: "₹12,450", percent: "10.3%", avatarType: .amazon)
-                    merchantCard(name: "Zomato", amount: "₹7,890", percent: "6.5%", avatarType: .zomato)
-                    merchantCard(name: "Reliance BP", amount: "₹6,250", percent: "5.2%", avatarType: .reliance)
-                    merchantCard(name: "Swiggy", amount: "₹5,430", percent: "4.5%", avatarType: .swiggy)
-                    merchantCard(name: "DMart", amount: "₹4,980", percent: "4.1%", avatarType: .dmart)
+            if topMerchants.isEmpty {
+                Text("No merchants yet")
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(topMerchants.enumerated()), id: \.offset) { index, merchant in
+                            merchantCard(
+                                name: merchant.name,
+                                amount: AppFormatter.currencyRounded(merchant.amount),
+                                percent: "\(String(format: "%.1f", merchant.percentage))%",
+                                color: Self.categoryPalette[index % Self.categoryPalette.count]
+                            )
+                        }
+                    }
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 2)
             }
         }
     }
 
-    enum MerchantCardAvatar {
-        case amazon, zomato, reliance, swiggy, dmart
-    }
-
     @ViewBuilder
-    private func merchantCard(name: String, amount: String, percent: String, avatarType: MerchantCardAvatar) -> some View {
+    private func merchantCard(name: String, amount: String, percent: String, color: Color) -> some View {
         NavigationLink(destination: RecentTransactionsView().hidesTabBarOnPush()) {
             VStack(spacing: 6) {
                 HStack(spacing: 6) {
-                    Group {
-                        switch avatarType {
-                        case .amazon:
-                            Circle()
-                                .fill(Color.orange.opacity(0.14))
-                                .frame(width: 24, height: 24)
-                                .overlay(
-                                    Text("a")
-                                        .font(.system(size: 13, weight: .black, design: .serif))
-                                        .foregroundColor(.orange)
-                                )
-                        case .zomato:
-                            Circle()
-                                .fill(Color(red: 254/255, green: 226/255, blue: 226/255))
-                                .frame(width: 24, height: 24)
-                                .overlay(
-                                    Text("z")
-                                        .font(.system(size: 11, weight: .black, design: .rounded))
-                                        .foregroundColor(.red)
-                                )
-                        case .reliance:
-                            Circle()
-                                .fill(Color(red: 224/255, green: 242/255, blue: 254/255))
-                                .frame(width: 24, height: 24)
-                                .overlay(
-                                    Image(systemName: "fuelpump.fill")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundColor(.blue)
-                                )
-                        case .swiggy:
-                            Circle()
-                                .fill(Color.orange.opacity(0.14))
-                                .frame(width: 24, height: 24)
-                                .overlay(
-                                    Text("S")
-                                        .font(.system(size: 11, weight: .black, design: .rounded))
-                                        .foregroundColor(.orange)
-                                )
-                        case .dmart:
-                            Circle()
-                                .fill(Color(red: 220/255, green: 245/255, blue: 225/255))
-                                .frame(width: 24, height: 24)
-                                .overlay(
-                                    Text("D")
-                                        .font(.system(size: 11, weight: .black, design: .rounded))
-                                        .foregroundColor(Color(red: 22/255, green: 130/255, blue: 60/255))
-                                )
-                        }
-                    }
+                    Circle()
+                        .fill(color.opacity(0.14))
+                        .frame(width: 24, height: 24)
+                        .overlay(
+                            Text(String(name.prefix(1)).uppercased())
+                                .font(.system(size: 11, weight: .black, design: .rounded))
+                                .foregroundColor(color)
+                        )
 
                     Text(name)
                         .font(.system(size: 11, weight: .bold, design: .rounded))
@@ -643,7 +583,7 @@ struct ExpensesView: View {
                     .foregroundColor(Color.appGreen)
             }
             .frame(width: 104, height: 96)
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
         }

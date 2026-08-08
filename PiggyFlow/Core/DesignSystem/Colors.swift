@@ -33,7 +33,9 @@ extension Color {
     /// Deep gradient partner for indigo.
     static let appIndigoDeep = Color(red: 61/255, green: 64/255, blue: 189/255)
 
-    /// App-wide background canvas color: #F8FAF8 (RGB 248, 250, 248) everywhere in the app
+    /// App-wide background canvas color: #F8FAF8 (RGB 248, 250, 248) everywhere in the app.
+    /// The app is light-only (`UIUserInterfaceStyle` is pinned to Light in Info.plist), so
+    /// this is a fixed value rather than a dark-aware one.
     static let appBackground = Color(red: 248/255, green: 250/255, blue: 248/255)
 
     /// Elevated card & component surface: Pure White (#FFFFFF) everywhere in the app

@@ -6,12 +6,11 @@ struct TrackerView: View {
     @Query private var trackerRecords: [TrackerRecord]
     @Query private var expenses: [Expense]
 
+    // Not yet wired to what renders below — every section always shows its full real data
+    // regardless of which tab is selected. Filtering each section to its matching tab is a
+    // larger change (four separate tab-scoped lists) than this pass's scope.
     @State private var selectedTab: TrackerTab = .overview
-    @State private var selectedDateRange: String = "May 1 – May 31, 2025"
-    @State private var showAddExpenseSheet: Bool = false
-    @State private var showAddTrackerSheet: Bool = false
-    /// Which tab the Add Tracker sheet opens on — set by whichever control presented it.
-    @State private var addTrackerKind: TrackerKind = .budget
+    @State private var selectedGoalForFunds: TrackerRecord?
 
     enum TrackerTab: String, CaseIterable, Identifiable {
         case overview = "Overview"
@@ -22,6 +21,77 @@ struct TrackerView: View {
 
         var id: String { rawValue }
     }
+
+    // MARK: - Real data
+
+    private var budgetTrackers: [TrackerRecord] { trackerRecords.filter { $0.type == "budget" } }
+    private var goalTrackers: [TrackerRecord] { trackerRecords.filter { $0.type == "goal" } }
+
+    private var upcomingTrackers: [TrackerRecord] {
+        Array(trackerRecords.filter { !$0.isPaid }.sorted { $0.dueDate < $1.dueDate }.prefix(4))
+    }
+
+    private var currentMonthRangeText: String {
+        Date().formatted(.dateTime.month(.wide).year())
+    }
+
+    /// Sum of this category's expenses in the given month — how "spent" is computed against
+    /// a budget tracker's `category`.
+    private func spent(for category: String, in month: Date = Date()) -> Double {
+        guard !category.isEmpty else { return 0 }
+        let cal = Calendar.current
+        return expenses
+            .filter { $0.type == category && cal.isDate($0.date, equalTo: month, toGranularity: .month) }
+            .reduce(0) { $0 + $1.price }
+    }
+
+    private var monthTotalExpenses: Double {
+        let cal = Calendar.current
+        return expenses.filter { cal.isDate($0.date, equalTo: Date(), toGranularity: .month) }.reduce(0) { $0 + $1.price }
+    }
+
+    private var totalBudgeted: Double { budgetTrackers.reduce(0) { $0 + $1.amount } }
+    private var totalBudgetSpent: Double { budgetTrackers.reduce(0) { $0 + spent(for: $1.category) } }
+
+    private var budgetProgressRatio: Double {
+        guard totalBudgeted > 0 else { return 0 }
+        return min(1, totalBudgetSpent / totalBudgeted)
+    }
+
+    private var daysElapsedInMonth: Int { Calendar.current.component(.day, from: Date()) }
+    private var daysInCurrentMonth: Int { Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30 }
+
+    private var dailyAverageSpend: Double {
+        daysElapsedInMonth > 0 ? monthTotalExpenses / Double(daysElapsedInMonth) : 0
+    }
+
+    private var dailyBudgetTarget: Double {
+        totalBudgeted > 0 ? totalBudgeted / Double(daysInCurrentMonth) : 0
+    }
+
+    private func dueText(for date: Date) -> String {
+        let cal = Calendar.current
+        let days = cal.dateComponents([.day], from: cal.startOfDay(for: Date()), to: cal.startOfDay(for: date)).day ?? 0
+        if days < 0 { return "Overdue" }
+        if days == 0 { return "Today" }
+        if days == 1 { return "Tomorrow" }
+        return "In \(days) days"
+    }
+
+    private let budgetPalette: [Color] = [
+        .appGreen,
+        Color(red: 59/255, green: 130/255, blue: 246/255),
+        Color(red: 147/255, green: 51/255, blue: 234/255),
+        Color(red: 249/255, green: 115/255, blue: 22/255),
+        Color(red: 239/255, green: 68/255, blue: 68/255),
+        Color.gray.opacity(0.6)
+    ]
+
+    private let goalPalette: [(color: Color, bg: Color)] = [
+        (.appGreen, Color(red: 232/255, green: 247/255, blue: 238/255)),
+        (Color(red: 249/255, green: 115/255, blue: 22/255), Color(red: 254/255, green: 243/255, blue: 235/255)),
+        (Color(red: 147/255, green: 51/255, blue: 234/255), Color(red: 243/255, green: 232/255, blue: 255/255))
+    ]
 
     var body: some View {
         NavigationStack {
@@ -53,26 +123,14 @@ struct TrackerView: View {
 
                             // 6. Goal Progress Section
                             goalProgressSection
-
-                            // 7. Quick Add Action Pills Section
-                            quickAddSection
                         }
                         .padding(.horizontal, 16)
                     }
                     .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 96) }
                 }
             }
-            // Full screen rather than a sheet: the chooser grid now carries a proper header and
-            // fills the page, not a half-height card.
-            .fullScreenCover(isPresented: $showAddExpenseSheet) {
-                AddExpenseBottomSheetView(itemToEdit: nil)
-            }
-            // Full screen rather than a sheet, for the same reason as Add Expense/Add Income:
-            // AddTrackerView carries its own header and action bar sized for the whole screen.
-            .fullScreenCover(isPresented: $showAddTrackerSheet) {
-                NavigationStack {
-                    AddTrackerView(initialKind: addTrackerKind)
-                }
+            .sheet(item: $selectedGoalForFunds) { goal in
+                AddGoalFundsSheet(goal: goal)
             }
         }
     }
@@ -93,12 +151,11 @@ struct TrackerView: View {
             Spacer()
 
             HStack(spacing: 10) {
-                // Add Tracker Button
-                Button {
-                    Haptics.light()
-                    addTrackerKind = .budget
-                    showAddTrackerSheet = true
-                } label: {
+                // Add Tracker Button — pushed via NavigationLink rather than opened as a
+                // modal cover, matching how Home's own "Add Tracker" quick-action card reaches
+                // this same screen. A fullScreenCover here read as a different, disconnected
+                // flow next to every other way into this screen.
+                NavigationLink(destination: AddTrackerView().hidesTabBarOnPush()) {
                     Image(systemName: AppIcon.Action.add)
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(Color.appGreenDeep)
@@ -107,6 +164,7 @@ struct TrackerView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded { Haptics.light() })
 
                 // Notification Bell with Red Count Badge
                 NavigationLink(destination: NotificationView().hidesTabBarOnPush()) {
@@ -161,7 +219,7 @@ struct TrackerView: View {
             .padding(4)
             .background(
                 Capsule()
-                    .fill(Color.white)
+                    .fill(Color.appSurface)
                     .shadow(color: Color.black.opacity(0.03), radius: 6, x: 0, y: 2)
             )
         }
@@ -177,14 +235,9 @@ struct TrackerView: View {
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
 
-                    HStack(spacing: 4) {
-                        Text(selectedDateRange)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(.secondary)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.secondary)
-                    }
+                    Text(currentMonthRangeText)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(.secondary)
                 }
 
                 Spacer()
@@ -203,10 +256,10 @@ struct TrackerView: View {
                     Text("Spent")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
-                    Text("₹1,20,440")
+                    Text(AppFormatter.currencyRounded(totalBudgeted > 0 ? totalBudgetSpent : monthTotalExpenses))
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
-                    Text("55% of ₹2,20,000")
+                    Text(totalBudgeted > 0 ? "\(Int(budgetProgressRatio * 100))% of \(AppFormatter.currencyRounded(totalBudgeted))" : "No budget set")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
                 }
@@ -221,7 +274,7 @@ struct TrackerView: View {
                     Text("Remaining")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
-                    Text("₹99,560")
+                    Text(AppFormatter.currencyRounded(max(0, totalBudgeted - totalBudgetSpent)))
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
                 }
@@ -237,12 +290,14 @@ struct TrackerView: View {
                     Text("Daily Average")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
-                    Text("₹3,885")
+                    Text(AppFormatter.currencyRounded(dailyAverageSpend))
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
-                    Text("of ₹7,097")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
+                    if totalBudgeted > 0 {
+                        Text("of \(AppFormatter.currencyRounded(dailyBudgetTarget))")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 14)
@@ -256,46 +311,83 @@ struct TrackerView: View {
                         .frame(height: 8)
                     Capsule()
                         .fill(Color.appGreen)
-                        .frame(width: geo.size.width * 0.55, height: 8)
+                        .frame(width: geo.size.width * budgetProgressRatio, height: 8)
                 }
             }
             .frame(height: 8)
 
             // Insight Callout Banner
-            NavigationLink(destination: FinancialInsightsView().hidesTabBarOnPush()) {
-                HStack(spacing: 12) {
-                    Circle()
-                        .fill(Color.appGreen.opacity(0.16))
-                        .frame(width: 36, height: 36)
-                        .overlay(
-                            Image(systemName: "chart.line.uptrend.xyaxis")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundColor(.appGreen)
-                        )
+            if totalBudgeted > 0 {
+                let remaining = totalBudgeted - totalBudgetSpent
+                NavigationLink(destination: FinancialInsightsView().hidesTabBarOnPush()) {
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(Color.appGreen.opacity(0.16))
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Image(systemName: remaining >= 0 ? "chart.line.uptrend.xyaxis" : "exclamationmark.triangle.fill")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(.appGreen)
+                            )
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("You're on track!")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
-                        Text("You're spending ₹8,560 less than your planned budget.")
-                            .font(.system(size: 11.5, weight: .medium, design: .rounded))
-                            .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(remaining >= 0 ? "You're on track!" : "Over budget")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
+                            Text(remaining >= 0
+                                ? "You're spending \(AppFormatter.currencyRounded(remaining)) less than your planned budget."
+                                : "You've spent \(AppFormatter.currencyRounded(abs(remaining))) more than your planned budget.")
+                                .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.secondary.opacity(0.6))
                     }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.secondary.opacity(0.6))
+                    .padding(12)
+                    .background(Color(red: 240/255, green: 250/255, blue: 244/255))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
-                .padding(12)
-                .background(Color(red: 240/255, green: 250/255, blue: 244/255))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .buttonStyle(.plain)
+            } else {
+                NavigationLink(destination: AddTrackerView(initialKind: .budget).hidesTabBarOnPush()) {
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(Color.appGreen.opacity(0.16))
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Image(systemName: "target")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(.appGreen)
+                            )
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Set a budget to track your progress")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
+                            Text("Add a category budget to see how you're doing this month.")
+                                .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.secondary.opacity(0.6))
+                    }
+                    .padding(12)
+                    .background(Color(red: 240/255, green: 250/255, blue: 244/255))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
     }
@@ -317,106 +409,64 @@ struct TrackerView: View {
                 }
             }
 
-            VStack(spacing: 0) {
-                paymentRow(
-                    title: "Netflix Subscription",
-                    dueDate: "Jun 1, 2025  •  Subscription",
-                    amount: "₹649.00",
-                    dueText: "Tomorrow",
-                    avatar: .netflix
-                )
-
-                Divider().padding(.leading, 64)
-
-                paymentRow(
-                    title: "Citi Credit Card Bill",
-                    dueDate: "Jun 5, 2025  •  Credit Card",
-                    amount: "₹4,250.00",
-                    dueText: "In 4 days",
-                    avatar: .citi
-                )
-
-                Divider().padding(.leading, 64)
-
-                paymentRow(
-                    title: "Electricity Bill",
-                    dueDate: "Jun 10, 2025  •  Utilities",
-                    amount: "₹1,240.00",
-                    dueText: "In 9 days",
-                    avatar: .electricity
-                )
-
-                Divider().padding(.leading, 64)
-
-                paymentRow(
-                    title: "Home Loan EMI",
-                    dueDate: "Jun 15, 2025  •  Loan",
-                    amount: "₹18,500.00",
-                    dueText: "In 14 days",
-                    avatar: .homeLoan
-                )
+            if upcomingTrackers.isEmpty {
+                Text("No upcoming payments")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.appSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(upcomingTrackers.enumerated()), id: \.element.id) { index, record in
+                        paymentRow(record)
+                        if index < upcomingTrackers.count - 1 {
+                            Divider().padding(.leading, 64)
+                        }
+                    }
+                }
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
             }
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
         }
     }
 
-    enum PaymentAvatar {
-        case netflix, citi, electricity, homeLoan
+    @ViewBuilder
+    private func trackerAvatar(_ record: TrackerRecord) -> some View {
+        let (icon, tint): (String, Color) = {
+            switch record.type {
+            case "subscription": return ("repeat.circle.fill", .appIndigo)
+            case "emi": return ("building.2.fill", .appWarningAmber)
+            case "goal": return ("target", .appGreen)
+            case "budget": return ("chart.pie.fill", .appGreen)
+            default: return ("bell.fill", .appGreen)
+            }
+        }()
+        Circle()
+            .fill(tint.opacity(0.14))
+            .frame(width: 42, height: 42)
+            .overlay(
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(tint)
+            )
     }
 
     @ViewBuilder
-    private func paymentRow(title: String, dueDate: String, amount: String, dueText: String, avatar: PaymentAvatar) -> some View {
+    private func paymentRow(_ record: TrackerRecord) -> some View {
         NavigationLink(destination: UpcomingPaymentsView().hidesTabBarOnPush()) {
             HStack(spacing: 12) {
-                Group {
-                    switch avatar {
-                    case .netflix:
-                        Circle()
-                            .fill(Color(red: 200/255, green: 30/255, blue: 30/255))
-                            .frame(width: 42, height: 42)
-                            .overlay(
-                                Text("N")
-                                    .font(.system(size: 18, weight: .black, design: .rounded))
-                                    .foregroundColor(.white)
-                            )
-                    case .citi:
-                        Circle()
-                            .fill(Color(red: 0/255, green: 75/255, blue: 145/255))
-                            .frame(width: 42, height: 42)
-                            .overlay(
-                                Text("citi")
-                                    .font(.system(size: 11, weight: .black, design: .rounded))
-                                    .foregroundColor(.white)
-                            )
-                    case .electricity:
-                        Circle()
-                            .fill(Color(red: 220/255, green: 245/255, blue: 225/255))
-                            .frame(width: 42, height: 42)
-                            .overlay(
-                                Image(systemName: "bolt.fill")
-                                    .font(.system(size: 17, weight: .bold))
-                                    .foregroundColor(.appGreen)
-                            )
-                    case .homeLoan:
-                        Circle()
-                            .fill(Color.orange.opacity(0.15))
-                            .frame(width: 42, height: 42)
-                            .overlay(
-                                Image(systemName: "building.2.fill")
-                                    .font(.system(size: 17, weight: .bold))
-                                    .foregroundColor(.orange)
-                            )
-                    }
-                }
+                trackerAvatar(record)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
+                    Text(record.name)
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
 
-                    Text(dueDate)
+                    Text("\(record.dueDate.formatted(.dateTime.month(.abbreviated).day().year()))  •  \(record.subType.capitalized)")
                         .font(.system(size: 11.5, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
                 }
@@ -425,11 +475,11 @@ struct TrackerView: View {
 
                 HStack(spacing: 6) {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(amount)
+                        Text(AppFormatter.currency(record.amount))
                             .font(.system(size: 15, weight: .bold, design: .rounded))
                             .foregroundColor(.primary)
 
-                        Text(dueText)
+                        Text(dueText(for: record.dueDate))
                             .font(.system(size: 11.5, weight: .bold, design: .rounded))
                             .foregroundColor(.appGreen)
                     }
@@ -462,68 +512,92 @@ struct TrackerView: View {
                 }
             }
 
-            // Donut sits above the breakdown rather than beside it: side-by-side left the
-            // rows ~185pt for ~245pt of content, so every amount and percent wrapped
-            // vertically one character at a time.
-            VStack(spacing: 18) {
-                // Multi-color Donut Ring
-                ZStack {
-                    Circle()
-                        .stroke(Color.appGreen, lineWidth: 14)
-                        .frame(width: 110, height: 110)
-
-                    Circle()
-                        .trim(from: 0.25, to: 0.44)
-                        .stroke(Color(red: 59/255, green: 130/255, blue: 246/255), lineWidth: 14)
-                        .frame(width: 110, height: 110)
-
-                    Circle()
-                        .trim(from: 0.44, to: 0.58)
-                        .stroke(Color(red: 147/255, green: 51/255, blue: 234/255), lineWidth: 14)
-                        .frame(width: 110, height: 110)
-
-                    Circle()
-                        .trim(from: 0.58, to: 0.70)
-                        .stroke(Color(red: 249/255, green: 115/255, blue: 22/255), lineWidth: 14)
-                        .frame(width: 110, height: 110)
-
-                    Circle()
-                        .trim(from: 0.70, to: 0.85)
-                        .stroke(Color(red: 239/255, green: 68/255, blue: 68/255), lineWidth: 14)
-                        .frame(width: 110, height: 110)
-
-                    Circle()
-                        .trim(from: 0.85, to: 1.0)
-                        .stroke(Color.gray.opacity(0.35), lineWidth: 14)
-                        .frame(width: 110, height: 110)
-
-                    VStack(spacing: 1) {
-                        Text("55%")
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
-
-                        Text("of budget\nused")
-                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
+            if budgetTrackers.isEmpty {
+                VStack(spacing: 10) {
+                    Text("No budgets set yet")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(.secondary)
+                    NavigationLink(destination: AddTrackerView(initialKind: .budget).hidesTabBarOnPush()) {
+                        Text("Add Budget")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.appGreen)
                     }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(24)
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
+            } else {
+                // Donut sits above the breakdown rather than beside it: side-by-side left the
+                // rows ~185pt for ~245pt of content, so every amount and percent wrapped
+                // vertically one character at a time.
+                VStack(spacing: 18) {
+                    // Multi-color Donut Ring — each budget's share of what's actually been
+                    // spent so far, not of the budget limit (that ratio drives the centre %).
+                    ZStack {
+                        Circle()
+                            .stroke(Color.gray.opacity(0.15), lineWidth: 14)
+                            .frame(width: 110, height: 110)
 
-                // Breakdown List
-                VStack(spacing: 11) {
-                    budgetRow(color: Color.appGreen, category: "Food & Dining", amount: "₹32,450", percent: "54%", ratio: 0.54)
-                    budgetRow(color: Color(red: 59/255, green: 130/255, blue: 246/255), category: "Shopping", amount: "₹22,300", percent: "62%", ratio: 0.62)
-                    budgetRow(color: Color(red: 147/255, green: 51/255, blue: 234/255), category: "Utilities", amount: "₹12,450", percent: "49%", ratio: 0.49)
-                    budgetRow(color: Color(red: 249/255, green: 115/255, blue: 22/255), category: "Transport", amount: "₹8,900", percent: "59%", ratio: 0.59)
-                    budgetRow(color: Color(red: 239/255, green: 68/255, blue: 68/255), category: "Entertainment", amount: "₹8,560", percent: "71%", ratio: 0.71)
-                    budgetRow(color: Color.gray.opacity(0.6), category: "Others", amount: "₹17,780", percent: "48%", ratio: 0.48)
+                        ForEach(Array(donutSegments.enumerated()), id: \.offset) { _, segment in
+                            Circle()
+                                .trim(from: segment.start, to: segment.end)
+                                .stroke(segment.color, lineWidth: 14)
+                                .frame(width: 110, height: 110)
+                        }
+
+                        VStack(spacing: 1) {
+                            Text("\(Int(budgetProgressRatio * 100))%")
+                                .font(.system(size: 20, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
+
+                            Text("of budget\nused")
+                                .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+
+                    // Breakdown List
+                    VStack(spacing: 11) {
+                        ForEach(Array(budgetTrackers.enumerated()), id: \.element.id) { index, tracker in
+                            let categorySpent = spent(for: tracker.category)
+                            let ratio = tracker.amount > 0 ? min(1, categorySpent / tracker.amount) : 0
+                            budgetRow(
+                                color: budgetPalette[index % budgetPalette.count],
+                                category: tracker.category.isEmpty ? tracker.name : tracker.category,
+                                amount: AppFormatter.currencyRounded(categorySpent),
+                                percent: "\(Int(ratio * 100))%",
+                                ratio: ratio
+                            )
+                        }
+                    }
                 }
+                .padding(16)
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
             }
-            .padding(16)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
         }
+    }
+
+    /// Each budget's slice of total spending so far, as trim ranges for the donut ring.
+    private var donutSegments: [(start: CGFloat, end: CGFloat, color: Color)] {
+        let total = budgetTrackers.reduce(0.0) { $0 + max(0, spent(for: $1.category)) }
+        guard total > 0 else { return [] }
+        var cursor: CGFloat = 0
+        var result: [(CGFloat, CGFloat, Color)] = []
+        for (index, tracker) in budgetTrackers.enumerated() {
+            let value = max(0, spent(for: tracker.category))
+            guard value > 0 else { continue }
+            let fraction = CGFloat(value / total)
+            let start = cursor
+            let end = min(1, cursor + fraction)
+            result.append((start, end, budgetPalette[index % budgetPalette.count]))
+            cursor = end
+        }
+        return result
     }
 
     @ViewBuilder
@@ -581,69 +655,67 @@ struct TrackerView: View {
 
                 Spacer()
 
-                NavigationLink(destination: ReportsView().hidesTabBarOnPush()) {
+                NavigationLink(destination: BudgetGoalsView().hidesTabBarOnPush()) {
                     Text("View All")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundColor(.appGreen)
                 }
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    goalCard(
-                        title: "Goa Trip",
-                        savedInfo: "₹25,000 of ₹50,000",
-                        percentage: 0.50,
-                        percentText: "50%",
-                        color: Color.appGreen,
-                        bgColor: Color(red: 232/255, green: 247/255, blue: 238/255),
-                        icon: "tree.fill"
-                    )
-
-                    goalCard(
-                        title: "New Phone",
-                        savedInfo: "₹18,000 of ₹60,000",
-                        percentage: 0.30,
-                        percentText: "30%",
-                        color: Color(red: 249/255, green: 115/255, blue: 22/255),
-                        bgColor: Color(red: 254/255, green: 243/255, blue: 235/255),
-                        icon: "iphone"
-                    )
-
-                    goalCard(
-                        title: "Emergency Fund",
-                        savedInfo: "₹40,000 of ₹1,00,000",
-                        percentage: 0.40,
-                        percentText: "40%",
-                        color: Color(red: 147/255, green: 51/255, blue: 234/255),
-                        bgColor: Color(red: 243/255, green: 232/255, blue: 255/255),
-                        icon: "shield.fill"
-                    )
+            if goalTrackers.isEmpty {
+                HStack {
+                    Text("No goals yet")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    NavigationLink(destination: AddTrackerView(initialKind: .goal).hidesTabBarOnPush()) {
+                        Text("Add Goal")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.appGreen)
+                    }
                 }
-                .padding(.vertical, 2)
+                .padding(16)
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(Array(goalTrackers.enumerated()), id: \.element.id) { index, tracker in
+                            goalCard(tracker, colorIndex: index)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
             }
         }
     }
 
     @ViewBuilder
-    private func goalCard(title: String, savedInfo: String, percentage: CGFloat, percentText: String, color: Color, bgColor: Color, icon: String) -> some View {
-        NavigationLink(destination: ReportsView().hidesTabBarOnPush()) {
+    private func goalCard(_ tracker: TrackerRecord, colorIndex: Int) -> some View {
+        let palette = goalPalette[colorIndex % goalPalette.count]
+        let ratio = tracker.amount > 0 ? min(1, tracker.currentAmount / tracker.amount) : 0
+
+        Button {
+            Haptics.light()
+            selectedGoalForFunds = tracker
+        } label: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(bgColor)
+                        .fill(palette.bg)
                         .frame(width: 32, height: 32)
                         .overlay(
-                            Image(systemName: icon)
+                            Image(systemName: tracker.logoUrl.isEmpty ? "target" : tracker.logoUrl)
                                 .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(color)
+                                .foregroundColor(palette.color)
                         )
 
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(title)
+                        Text(tracker.name)
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                             .foregroundColor(.primary)
-                        Text(savedInfo)
+                        Text("\(AppFormatter.currencyRounded(tracker.currentAmount)) of \(AppFormatter.currencyRounded(tracker.amount))")
                             .font(.system(size: 10.5, weight: .medium, design: .rounded))
                             .foregroundColor(.secondary)
                             .lineLimit(1)
@@ -658,15 +730,15 @@ struct TrackerView: View {
                                 .fill(Color.gray.opacity(0.15))
                                 .frame(height: 5)
                             Capsule()
-                                .fill(color)
-                                .frame(width: geo.size.width * percentage, height: 5)
+                                .fill(palette.color)
+                                .frame(width: geo.size.width * ratio, height: 5)
                         }
                     }
                     .frame(height: 5)
 
-                    Text(percentText)
+                    Text("\(Int(ratio * 100))%")
                         .font(.system(size: 11.5, weight: .bold, design: .rounded))
-                        .foregroundColor(color)
+                        .foregroundColor(palette.color)
                 }
             }
             .padding(12)
@@ -678,60 +750,6 @@ struct TrackerView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - 7. Quick Add Action Pills Section
-    private var quickAddSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Quick Add")
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    quickAddPill(icon: "doc.text.fill", title: "Add Expense") {
-                        showAddExpenseSheet = true
-                    }
-                    quickAddPill(icon: "creditcard.fill", title: "Add Income") {
-                        showAddExpenseSheet = true
-                    }
-                    quickAddPill(icon: "target", title: "Add Budget") {
-                        addTrackerKind = .budget
-                        showAddTrackerSheet = true
-                    }
-                    quickAddPill(icon: "star.circle.fill", title: "Add Goal") {
-                        addTrackerKind = .goal
-                        showAddTrackerSheet = true
-                    }
-                    quickAddPill(icon: "repeat.circle.fill", title: "Add Subscription") {
-                        addTrackerKind = .subscription
-                        showAddTrackerSheet = true
-                    }
-                    quickAddPill(icon: "building.2.fill", title: "Add EMI / Loan") {
-                        addTrackerKind = .emi
-                        showAddTrackerSheet = true
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func quickAddPill(icon: String, title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .bold))
-                Text(title)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-            }
-            .foregroundColor(Color(red: 20/255, green: 90/255, blue: 50/255))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(Color.appGreen.opacity(0.12))
-            .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
 }
 
 #Preview {

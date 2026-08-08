@@ -442,6 +442,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PiggyFlow/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PiggyFlow;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSCameraUsageDescription = "We use the camera to scan bills and automatically add expenses.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Face ID is used to quickly and securely sign in to your account.";
@@ -480,6 +481,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PiggyFlow/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PiggyFlow;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSCameraUsageDescription = "We use the camera to scan bills and automatically add expenses.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Face ID is used to quickly and securely sign in to your account.";

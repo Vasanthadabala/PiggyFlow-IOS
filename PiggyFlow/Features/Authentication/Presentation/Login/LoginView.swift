@@ -2,7 +2,6 @@ import SwiftUI
 import AuthenticationServices
 
 struct LoginView: View {
-    @Environment(\.colorScheme) var colorScheme
     @EnvironmentObject var dataManager: DataManager
     
     @EnvironmentObject var appleSignInManager: AppleSignInManager
@@ -40,7 +39,7 @@ struct LoginView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 50)
                 .foregroundColor(Color.white)
-                .background(colorScheme == .dark ? Color.gray.opacity(0.1) : Color.black)
+                .background(Color.black)
                 .cornerRadius(10)
                 .padding(.horizontal, 40)
             }

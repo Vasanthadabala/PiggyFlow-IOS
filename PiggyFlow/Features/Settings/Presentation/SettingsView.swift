@@ -20,7 +20,6 @@ import Combine
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var context
-    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var appleSignInManager: AppleSignInManager
 
     @AppStorage("username") private var userName: String = ""

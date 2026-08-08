@@ -54,7 +54,7 @@ struct SubscriptionTrackerForm: View {
 
             TrackerField(title: "Account") {
                 TrackerMenuField(
-                    options: TrackerOptions.accounts,
+                    options: TrackerOptions.accounts(),
                     selection: $form.account,
                     fallbackIcon: "wallet.pass.fill"
                 )

@@ -1,36 +1,18 @@
 import SwiftUI
 import SwiftData
 
-struct UserAccountItem: Identifiable, Equatable {
-    let id = UUID()
-    var name: String
-    var type: String
-    var accountNumber: String
-    var balance: Double
-    var isCreditCard: Bool
-    var iconName: String
-    var iconColor: Color
-    var iconBgColor: Color
-    var caption: String
-}
-
 struct AccountsView: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var accountManager = AccountManager.shared
 
     @State private var isBalanceHidden: Bool = false
     @State private var showAddAccountSheet: Bool = false
-    @State private var selectedAccountForDetail: UserAccountItem?
+    @State private var selectedAccountForDetail: Account?
 
-    @State private var accounts: [UserAccountItem] = [
-        UserAccountItem(name: "SBI Bank", type: "Savings Account", accountNumber: "•••• 1234", balance: 48560.00, isCreditCard: false, iconName: "building.columns.fill", iconColor: .white, iconBgColor: Color.appGreen, caption: "Available Balance"),
-        UserAccountItem(name: "HDFC Bank", type: "Current Account", accountNumber: "•••• 5678", balance: 57000.00, isCreditCard: false, iconName: "building.2.fill", iconColor: .white, iconBgColor: Color(red: 153/255, green: 27/255, blue: 60/255), caption: "Available Balance"),
-        UserAccountItem(name: "HDFC Regalia Credit Card", type: "Credit Card", accountNumber: "•••• 2345", balance: -28340.00, isCreditCard: true, iconName: "creditcard.fill", iconColor: .white, iconBgColor: Color(red: 30/255, green: 64/255, blue: 175/255), caption: "Outstanding"),
-        UserAccountItem(name: "PhonePe Wallet", type: "Wallet", accountNumber: "", balance: 5250.00, isCreditCard: false, iconName: "wallet.pass.fill", iconColor: .white, iconBgColor: Color(red: 109/255, green: 40/255, blue: 217/255), caption: "Available Balance"),
-        UserAccountItem(name: "Cash", type: "Physical Cash", accountNumber: "", balance: 8660.00, isCreditCard: false, iconName: "banknote.fill", iconColor: .white, iconBgColor: Color(red: 217/255, green: 119/255, blue: 6/255), caption: "Physical Cash")
-    ]
+    private var accounts: [Account] { accountManager.accounts }
 
     private var bankAccountsTotal: Double {
-        accounts.filter { !$0.isCreditCard && $0.type.contains("Account") }.reduce(0) { $0 + $1.balance }
+        accounts.filter { !$0.isCreditCard && ($0.category == .bank || $0.category == .business) }.reduce(0) { $0 + $1.balance }
     }
 
     private var creditCardsTotal: Double {
@@ -38,15 +20,15 @@ struct AccountsView: View {
     }
 
     private var walletsTotal: Double {
-        accounts.filter { $0.type == "Wallet" }.reduce(0) { $0 + $1.balance }
+        accounts.filter { $0.category == .eWallet }.reduce(0) { $0 + $1.balance }
     }
 
     private var cashTotal: Double {
-        accounts.filter { $0.type.contains("Cash") }.reduce(0) { $0 + $1.balance }
+        accounts.filter { $0.category == .cash }.reduce(0) { $0 + $1.balance }
     }
 
     private var totalBalance: Double {
-        accounts.reduce(0) { $0 + $1.balance }
+        accounts.filter { $0.includeInNetBalance }.reduce(0) { $0 + $1.balance }
     }
 
     var body: some View {
@@ -77,10 +59,12 @@ struct AccountsView: View {
         .ignoresSafeArea(.container, edges: .bottom)
         .background(Color.appBackground.ignoresSafeArea())
         .navigationBarHidden(true)
-        .sheet(isPresented: $showAddAccountSheet) {
-            AddAccountView(onSave: { newAccount in
-                accounts.append(newAccount)
-            })
+        .navigationDestination(isPresented: $showAddAccountSheet) {
+            // No onSave closure needed — AddAccountView persists via AccountManager directly,
+            // and this view observes that same manager, so the list updates on its own.
+            // A real push (not a sheet) so it slides in like every other full screen in the
+            // app, instead of covering from the bottom with a sheet's gray letterboxing.
+            AddAccountView().hidesTabBarOnPush()
         }
     }
 
@@ -218,7 +202,7 @@ struct AccountsView: View {
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
     }
@@ -269,16 +253,23 @@ struct AccountsView: View {
                 .buttonStyle(.plain)
             }
 
-            VStack(spacing: 10) {
-                ForEach(accounts) { acc in
-                    accountCardRow(acc)
+            if accounts.isEmpty {
+                Text("No accounts yet — add one below to get started.")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(accounts) { acc in
+                        accountCardRow(acc)
+                    }
                 }
             }
         }
     }
 
     @ViewBuilder
-    private func accountCardRow(_ acc: UserAccountItem) -> some View {
+    private func accountCardRow(_ acc: Account) -> some View {
         HStack(spacing: 14) {
             // Icon Avatar
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -287,7 +278,7 @@ struct AccountsView: View {
                 .overlay(
                     Image(systemName: acc.iconName)
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(acc.iconColor)
+                        .foregroundColor(.white)
                 )
 
             // Name & Subtitle
@@ -298,7 +289,7 @@ struct AccountsView: View {
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
-                    Text(acc.type)
+                    Text(acc.subType)
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
                     if !acc.accountNumber.isEmpty {
@@ -340,7 +331,7 @@ struct AccountsView: View {
                 .foregroundColor(.secondary.opacity(0.5))
         }
         .padding(14)
-        .background(Color.white)
+        .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: Color.black.opacity(0.03), radius: 6, x: 0, y: 2)
     }
@@ -467,106 +458,6 @@ struct AccountsView: View {
             Color.appBackground
                 .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: -4)
         )
-    }
-}
-
-// MARK: - Add Account Sheet Modal
-struct AddAccountModalSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var accountName: String = ""
-    @State private var accountType: String = "Savings Account"
-    @State private var initialBalance: String = ""
-    @State private var accountNumber: String = ""
-
-    let accountTypes = ["Savings Account", "Current Account", "Credit Card", "Wallet", "Physical Cash"]
-    let onSave: (UserAccountItem) -> Void
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Account Name")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                        TextField("e.g. Axis Bank, HDFC Card", text: $accountName)
-                            .padding(12)
-                            .background(Color.primary.opacity(0.04))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Account Type")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                        Picker("Type", selection: $accountType) {
-                            ForEach(accountTypes, id: \.self) { t in
-                                Text(t).tag(t)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.primary.opacity(0.04))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Initial Balance (₹)")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                        TextField("e.g. 50000", text: $initialBalance)
-                            .keyboardType(.numberPad)
-                            .padding(12)
-                            .background(Color.primary.opacity(0.04))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Last 4 Digits (Optional)")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                        TextField("e.g. 1234", text: $accountNumber)
-                            .keyboardType(.numberPad)
-                            .padding(12)
-                            .background(Color.primary.opacity(0.04))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-
-                Spacer()
-
-                Button {
-                    let bal = Double(initialBalance) ?? 0
-                    let isCard = accountType == "Credit Card"
-                    let num = accountNumber.isEmpty ? "" : "•••• \(accountNumber)"
-                    let item = UserAccountItem(
-                        name: accountName.isEmpty ? "New Account" : accountName,
-                        type: accountType,
-                        accountNumber: num,
-                        balance: isCard ? -abs(bal) : bal,
-                        isCreditCard: isCard,
-                        iconName: isCard ? "creditcard.fill" : "building.columns.fill",
-                        iconColor: .white,
-                        iconBgColor: isCard ? Color.appExpenseRed : Color.appGreen,
-                        caption: isCard ? "Outstanding" : "Available Balance"
-                    )
-                    onSave(item)
-                    dismiss()
-                } label: {
-                    Text("Save Account")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.appGreen)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 20)
-            }
-            .navigationTitle("Add New Account")
-            .navigationBarTitleDisplayMode(.inline)
-        }
     }
 }
 

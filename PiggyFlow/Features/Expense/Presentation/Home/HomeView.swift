@@ -3,8 +3,8 @@ import SwiftData
 
 struct HomeView: View {
     @Environment(\.modelContext) private var context
-    @Environment(\.colorScheme) var colorScheme
-    
+    @ObservedObject private var accountManager = AccountManager.shared
+
     @AppStorage("username") private var userName: String = ""
     @Query private var expenses: [Expense]
     @Query private var incomes: [Income]
@@ -12,24 +12,9 @@ struct HomeView: View {
 
     @State private var isBalanceVisible: Bool = true
     @State private var showAddAccountSheet: Bool = false
-    @State private var showAddBudgetSheet: Bool = false
     @State private var selectedTransactionForEdit: TransactionItem?
 
-    // Accounts Model for Accounts Card
-    struct AccountItem: Identifiable {
-        let id = UUID()
-        let name: String
-        let type: String
-        let balance: Double
-        let isCreditCard: Bool
-        let iconName: String
-    }
-
-    @State private var sampleAccounts: [AccountItem] = [
-        AccountItem(name: "SBI Bank", type: "Savings Account", balance: 48560, isCreditCard: false, iconName: "building.columns.fill"),
-        AccountItem(name: "HDFC Credit Card", type: "Credit Card", balance: -12340, isCreditCard: true, iconName: "creditcard.fill"),
-        AccountItem(name: "Cash", type: "Wallet", balance: 8750, isCreditCard: false, iconName: "banknote.fill")
-    ]
+    private var homeAccounts: [Account] { accountManager.accounts }
 
     // Time-based dynamic greeting
     private var greeting: String {
@@ -99,7 +84,16 @@ struct HomeView: View {
             case .income(let i): return i.note
             }
         }
-        
+
+        /// Which real account this was paid from/into — empty when the user hasn't picked
+        /// one. Every "• HDFC Bank"-style literal in the app should read from this instead.
+        var account: String {
+            switch self {
+            case .expense(let e): return e.account
+            case .income(let i): return i.account
+            }
+        }
+
         var color: Color {
             switch self {
             case .expense: return .appExpenseRed
@@ -114,25 +108,60 @@ struct HomeView: View {
         return (expenseItems + incomeItems).sorted { $0.date > $1.date }
     }
 
-    /// True once the user has recorded anything at all.
-    ///
-    /// Placeholder figures are all-or-nothing. Previously income and expenses each fell back
-    /// independently, so a user with one ₹80 expense and no income was shown a fabricated
-    /// ₹2,45,000 income — and a meaningless "100% savings rate" derived from it.
-    private var hasAnyData: Bool {
-        !incomes.isEmpty || !expenses.isEmpty
-    }
-
     private var totalIncome: Double {
-        hasAnyData ? incomes.reduce(0) { $0 + $1.income } : 245_000
+        incomes.reduce(0) { $0 + $1.income }
     }
 
     private var totalExpenses: Double {
-        hasAnyData ? expenses.reduce(0) { $0 + $1.price } : 120_440
+        expenses.reduce(0) { $0 + $1.price }
     }
 
     private var netBalance: Double {
         totalIncome - totalExpenses
+    }
+
+    // MARK: - This Month Overview (real data)
+
+    private var monthExpenses: [Expense] {
+        let cal = Calendar.current
+        return expenses.filter { cal.isDate($0.date, equalTo: Date(), toGranularity: .month) }
+    }
+
+    private var monthTotalSpend: Double { monthExpenses.reduce(0) { $0 + $1.price } }
+
+    private static let monthOverviewPalette: [Color] = [
+        .appGreen,
+        Color(red: 134/255, green: 239/255, blue: 172/255),
+        .appWarningAmber,
+        .appTeal,
+        .gray.opacity(0.5)
+    ]
+
+    private var monthCategoryBreakdown: [CategoryTotal] {
+        CalculateExpenseSummaryUseCase.categoryBreakdown(of: monthExpenses, total: monthTotalSpend)
+    }
+
+    private var monthCategoryDonutSegments: [(start: CGFloat, end: CGFloat, color: Color)] {
+        var cursor: CGFloat = 0
+        return monthCategoryBreakdown.enumerated().map { index, cat in
+            let fraction = CGFloat(cat.percentage / 100.0)
+            let seg = (start: cursor, end: min(1, cursor + fraction), color: Self.monthOverviewPalette[index % Self.monthOverviewPalette.count])
+            cursor += fraction
+            return seg
+        }
+    }
+
+    private var monthWeeklyTrend: [SpendingAggregates.WeeklyTotal] {
+        SpendingAggregates.weeklyTotals(expenses: expenses, incomes: incomes, month: Date())
+    }
+
+    private var monthWeeklyMax: Double {
+        monthWeeklyTrend.map(\.expense).max() ?? 0
+    }
+
+    private func barHeight(for value: Double) -> CGFloat {
+        guard monthWeeklyMax > 0 else { return 4 }
+        return 4 + CGFloat(value / monthWeeklyMax) * 44
     }
 
     private var formattedBalanceInteger: String {
@@ -158,8 +187,6 @@ struct HomeView: View {
     /// `nil` when there's no prior month to compare against, so the pill can hide
     /// rather than show a hardcoded "12.5%".
     private var monthOverMonthChange: Double? {
-        guard hasAnyData else { return 12.5 }
-
         let calendar = Calendar.current
         let now = Date()
         guard let lastMonth = calendar.date(byAdding: .month, value: -1, to: now) else { return nil }
@@ -179,21 +206,7 @@ struct HomeView: View {
 
     private var upcomingPayments: [TrackerRecord] {
         let sorted = trackerRecords.filter { !$0.isPaid }.sorted { $0.dueDate < $1.dueDate }
-        let cal = Calendar.current
-        let defaultSample: [TrackerRecord] = [
-            TrackerRecord(type: "subscription", name: "Netflix", subType: "Subscription", amount: 649, dueDate: cal.date(byAdding: .day, value: 3, to: Date()) ?? Date(), logoUrl: "https://cdn.brandfetch.io/domain/netflix.com"),
-            TrackerRecord(type: "subscription", name: "Spotify Premium", subType: "Subscription", amount: 119, dueDate: cal.date(byAdding: .day, value: 5, to: Date()) ?? Date(), logoUrl: "https://cdn.brandfetch.io/domain/spotify.com"),
-            TrackerRecord(type: "emi", name: "Home Loan EMI", subType: "EMI", amount: 28500, dueDate: cal.date(byAdding: .day, value: 10, to: Date()) ?? Date())
-        ]
-
-        var list = sorted
-        for item in defaultSample {
-            if list.count >= 3 { break }
-            if !list.contains(where: { $0.name.lowercased() == item.name.lowercased() }) {
-                list.append(item)
-            }
-        }
-        return Array(list.prefix(3))
+        return Array(sorted.prefix(3))
     }
 
     /// Unpaid trackers falling due within a week — drives the "N payments due soon" pill,
@@ -248,6 +261,11 @@ struct HomeView: View {
             }
             .sheet(item: $selectedTransactionForEdit) { item in
                 AddExpenseBottomSheetView(itemToEdit: item)
+            }
+            .navigationDestination(isPresented: $showAddAccountSheet) {
+                // A real push, not a sheet, so it slides in like every other full screen in
+                // the app instead of covering from the bottom with a sheet's gray letterboxing.
+                AddAccountView().hidesTabBarOnPush()
             }
         }
     }
@@ -580,13 +598,14 @@ struct HomeView: View {
                     .font(.system(size: 10.5, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    .minimumScaleFactor(0.8)
                 Text(subtitle)
                     .font(.system(size: 9, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    .minimumScaleFactor(0.8)
             }
+            .padding(.horizontal, 4)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 106)
@@ -612,50 +631,57 @@ struct HomeView: View {
                     }
                 }
 
-                VStack(spacing: 12) {
-                    ForEach(sampleAccounts) { acc in
-                        HStack(spacing: 8) {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.appGreen)
-                                .frame(width: 28, height: 28)
-                                .overlay(
-                                    Image(systemName: acc.iconName)
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(.white)
-                                )
+                if homeAccounts.isEmpty {
+                    Text("No accounts yet")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                } else {
+                    VStack(spacing: 12) {
+                        ForEach(homeAccounts.prefix(3)) { acc in
+                            HStack(spacing: 8) {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color.appGreen)
+                                    .frame(width: 28, height: 28)
+                                    .overlay(
+                                        Image(systemName: acc.iconName)
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundColor(.white)
+                                    )
 
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(formattedAccountName(acc.name))
-                                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
-                                Text(acc.type)
-                                    .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(formattedAccountName(acc.name))
+                                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
+                                    Text(acc.subType)
+                                        .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
+                                }
+
+                                Spacer(minLength: 4)
+
+                                HStack(spacing: 3) {
+                                    Text(acc.balance < 0 ? "-₹\(abs(Int(acc.balance)).formatted())" : "₹\(Int(acc.balance).formatted())")
+                                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                        .foregroundColor(acc.balance < 0 ? .appExpenseRed : .primary)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.85)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundColor(.secondary.opacity(0.6))
+                                }
+                                .layoutPriority(1)
                             }
-
-                            Spacer(minLength: 4)
-
-                            HStack(spacing: 3) {
-                                Text(acc.balance < 0 ? "-₹\(abs(Int(acc.balance)).formatted())" : "₹\(Int(acc.balance).formatted())")
-                                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                                    .foregroundColor(acc.balance < 0 ? .appExpenseRed : .primary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.85)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundColor(.secondary.opacity(0.6))
-                            }
-                            .layoutPriority(1)
                         }
                     }
                 }
 
                 Button {
                     Haptics.medium()
+                    showAddAccountSheet = true
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "plus")
@@ -673,7 +699,7 @@ struct HomeView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity)
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
 
@@ -693,34 +719,40 @@ struct HomeView: View {
                     }
                 }
 
-                VStack(spacing: 12) {
-                    ForEach(upcomingPayments.prefix(3)) { record in
-                        HStack(spacing: 8) {
-                            trackerIconAvatar(record)
+                if upcomingPayments.isEmpty {
+                    Text("No upcoming payments")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                } else {
+                    VStack(spacing: 12) {
+                        ForEach(upcomingPayments.prefix(3)) { record in
+                            HStack(spacing: 8) {
+                                trackerIconAvatar(record)
 
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(record.name)
-                                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.75)
-                                Text(record.subType.capitalized)
-                                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.75)
-                            }
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(record.name)
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.75)
+                                    Text(record.subType.capitalized)
+                                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.75)
+                                }
 
-                            Spacer(minLength: 2)
+                                Spacer(minLength: 2)
 
-                            VStack(alignment: .trailing, spacing: 1) {
-                                Text(record.dueDate.formatted(.dateTime.day().month(.abbreviated)))
-                                    .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                                    .foregroundColor(.secondary)
+                                VStack(alignment: .trailing, spacing: 1) {
+                                    Text(record.dueDate.formatted(.dateTime.day().month(.abbreviated)))
+                                        .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                                        .foregroundColor(.secondary)
 
-                                Text("₹\(Int(record.amount).formatted())")
-                                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
+                                    Text("₹\(Int(record.amount).formatted())")
+                                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                                        .foregroundColor(.primary)
+                                }
                             }
                         }
                     }
@@ -731,7 +763,7 @@ struct HomeView: View {
                         Image(systemName: "timer")
                             .font(.system(size: 10.5, weight: .bold))
                             .foregroundColor(.appGreen)
-                        Text("\(upcomingPayments.count) payments due soon")
+                        Text(upcomingPayments.isEmpty ? "Add a tracker" : "\(upcomingPayments.count) payments due soon")
                             .font(.system(size: 10, weight: .bold, design: .rounded))
                             .foregroundColor(.appGreen)
                         Spacer()
@@ -748,7 +780,7 @@ struct HomeView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity)
-            .background(Color.white)
+            .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
         }
@@ -810,7 +842,7 @@ struct HomeView: View {
                         Text("Total Spend")
                             .font(.system(size: 11, weight: .medium, design: .rounded))
                             .foregroundColor(.secondary)
-                        Text("₹\(Int(totalExpenses).formatted())")
+                        Text("₹\(Int(monthTotalSpend).formatted())")
                             .font(.system(size: 17, weight: .bold, design: .rounded))
                             .foregroundColor(.primary)
                     }
@@ -828,11 +860,9 @@ struct HomeView: View {
                         .padding(.top, 12)
 
                         HStack(alignment: .bottom, spacing: 3) {
-                            miniBar(height: 24, label: "1 May", isHighlighted: false)
-                            miniBar(height: 42, label: "8 May", isHighlighted: true)
-                            miniBar(height: 32, label: "15 May", isHighlighted: true)
-                            miniBar(height: 48, label: "22 May", isHighlighted: true)
-                            miniBar(height: 36, label: "31 May", isHighlighted: true)
+                            ForEach(monthWeeklyTrend) { point in
+                                miniBar(height: barHeight(for: point.expense), label: point.label, isHighlighted: point.expense > 0)
+                            }
                         }
                     }
                     .frame(height: 68)
@@ -851,32 +881,35 @@ struct HomeView: View {
                         // Multi-color Donut Ring Chart
                         ZStack {
                             Circle()
-                                .stroke(Color.appGreen, lineWidth: 9)
-                            Circle()
-                                .trim(from: 0.27, to: 0.46)
-                                .stroke(Color(red: 134/255, green: 239/255, blue: 172/255), lineWidth: 9)
-                            Circle()
-                                .trim(from: 0.46, to: 0.61)
-                                .stroke(Color.appWarningAmber, lineWidth: 9)
-                            Circle()
-                                .trim(from: 0.61, to: 0.71)
-                                .stroke(Color.appTeal, lineWidth: 9)
-                            Circle()
-                                .trim(from: 0.71, to: 1.0)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 9)
+                                .stroke(Color.gray.opacity(0.15), lineWidth: 9)
+                            ForEach(Array(monthCategoryDonutSegments.enumerated()), id: \.offset) { _, seg in
+                                Circle()
+                                    .trim(from: seg.start, to: seg.end)
+                                    .stroke(seg.color, lineWidth: 9)
+                            }
                         }
                         .rotationEffect(.degrees(-90))
                         .frame(width: 46, height: 46)
 
                         // Category List Breakdown
-                        VStack(alignment: .leading, spacing: 9) {
-                            categoryLegendRow(color: Color.appGreen, name: "Food & Dining", amount: "₹32,450", percent: "27%")
-                            categoryLegendRow(color: Color(red: 134/255, green: 239/255, blue: 172/255), name: "Shopping", amount: "₹22,300", percent: "19%")
-                            categoryLegendRow(color: .appWarningAmber, name: "Fuel", amount: "₹18,650", percent: "15%")
-                            categoryLegendRow(color: .appTeal, name: "Utilities", amount: "₹12,450", percent: "10%")
-                            categoryLegendRow(color: .gray.opacity(0.5), name: "Others", amount: "₹34,590", percent: "29%")
+                        if monthCategoryBreakdown.isEmpty {
+                            Text("No spending yet")
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            VStack(alignment: .leading, spacing: 9) {
+                                ForEach(Array(monthCategoryBreakdown.prefix(5).enumerated()), id: \.offset) { index, cat in
+                                    categoryLegendRow(
+                                        color: Self.monthOverviewPalette[index % Self.monthOverviewPalette.count],
+                                        name: cat.name,
+                                        amount: AppFormatter.currencyRounded(cat.amount),
+                                        percent: "\(String(format: "%.0f", cat.percentage))%"
+                                    )
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -901,7 +934,7 @@ struct HomeView: View {
             .buttonStyle(.plain)
         }
         .padding(14)
-        .background(Color.white)
+        .background(Color.appSurface)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
     }
@@ -977,8 +1010,9 @@ struct HomeView: View {
             }
 
             if allTransactions.isEmpty {
-                // Sample transaction matching image reference if empty
-                sampleTransactionRow
+                Text("No transactions yet")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
             } else {
                 // Resolved once — `allTransactions` maps, concatenates and sorts every
                 // record, so reading it inside the loop repeated that per row.
@@ -1005,49 +1039,13 @@ struct HomeView: View {
                         }
                     }
                 }
-                .background(Color.white)
+                .background(Color.appSurface)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
             }
         }
     }
 
-    private var sampleTransactionRow: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color.orange.opacity(0.12))
-                    .frame(width: 44, height: 44)
-                Text("a")
-                    .font(.system(size: 22, weight: .black, design: .serif))
-                    .foregroundColor(.orange)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Amazon India")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-                Text("Shopping")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 3) {
-                Text("-₹2,450")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-                Text("Today, 10:30 AM")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(14)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
-    }
 }
 
 #Preview {
