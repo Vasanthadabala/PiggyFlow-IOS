@@ -6,9 +6,8 @@ struct TrackerView: View {
     @Query private var trackerRecords: [TrackerRecord]
     @Query private var expenses: [Expense]
 
-    // Not yet wired to what renders below — every section always shows its full real data
-    // regardless of which tab is selected. Filtering each section to its matching tab is a
-    // larger change (four separate tab-scoped lists) than this pass's scope.
+    /// Drives which sections render below — see `body`. Previously this picker changed the
+    /// highlight and nothing else, so "Goals" and "EMIs" showed the identical screen.
     @State private var selectedTab: TrackerTab = .overview
     @State private var selectedGoalForFunds: TrackerRecord?
 
@@ -27,14 +26,34 @@ struct TrackerView: View {
     private var budgetTrackers: [TrackerRecord] { trackerRecords.filter { $0.type == "budget" } }
     private var goalTrackers: [TrackerRecord] { trackerRecords.filter { $0.type == "goal" } }
 
+    /// Same rule `NotificationView` uses to build its list, so the badge and the screen it
+    /// opens can't disagree.
+    private var notificationCount: Int {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        return trackerRecords.filter { record in
+            let days = cal.dateComponents([.day], from: today, to: cal.startOfDay(for: record.dueDate)).day ?? 999
+            return days >= 0 && days <= 7 && !record.isPaid
+        }.count
+    }
+
     private var upcomingTrackers: [TrackerRecord] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
+        // The Subscriptions and EMIs tabs narrow this to their own kind; Overview shows both.
+        let kinds: Set<String>? = {
+            switch selectedTab {
+            case .subscriptions: return ["subscription"]
+            case .emis: return ["emi"]
+            default: return nil
+            }
+        }()
         return Array(
             trackerRecords
                 .filter { !$0.isPaid && calendar.startOfDay(for: $0.dueDate) >= today }
+                .filter { kinds?.contains($0.type) ?? true }
                 .sorted { $0.dueDate < $1.dueDate }
-                .prefix(4)
+                .prefix(selectedTab == .overview ? 4 : 20)
         )
     }
 
@@ -44,11 +63,14 @@ struct TrackerView: View {
 
     /// Sum of this category's expenses in the given month — how "spent" is computed against
     /// a budget tracker's `category`.
+    /// A blank category means an all-spending budget (the one onboarding creates), so it counts
+    /// every expense that month rather than nothing — previously it always read ₹0 spent, which
+    /// made a real budget look untouched no matter how much had been spent against it.
     private func spent(for category: String, in month: Date = Date()) -> Double {
-        guard !category.isEmpty else { return 0 }
         let cal = Calendar.current
         return expenses
-            .filter { $0.type == category && cal.isDate($0.date, equalTo: month, toGranularity: .month) }
+            .filter { cal.isDate($0.date, equalTo: month, toGranularity: .month) }
+            .filter { category.isEmpty || $0.type == category }
             .reduce(0) { $0 + $1.price }
     }
 
@@ -119,17 +141,22 @@ struct TrackerView: View {
                             // 2. Segmented Pill Picker Tabs
                             segmentedTabPicker
 
-                            // 3. Monthly Progress Card
-                            monthlyProgressCard
+                            // 3-6. Only the sections that belong to the selected tab.
+                            if selectedTab == .overview || selectedTab == .budgets {
+                                monthlyProgressCard
+                            }
 
-                            // 4. Upcoming Payments Section
-                            upcomingPaymentsSection
+                            if selectedTab == .overview || selectedTab == .subscriptions || selectedTab == .emis {
+                                upcomingPaymentsSection
+                            }
 
-                            // 5. Budget Overview Section
-                            budgetOverviewSection
+                            if selectedTab == .overview || selectedTab == .budgets {
+                                budgetOverviewSection
+                            }
 
-                            // 6. Goal Progress Section
-                            goalProgressSection
+                            if selectedTab == .overview || selectedTab == .goals {
+                                goalProgressSection
+                            }
                         }
                         .padding(.horizontal, 16)
                     }
@@ -183,15 +210,20 @@ struct TrackerView: View {
                             .background(Color.appGreen.opacity(0.12))
                             .clipShape(Circle())
 
-                        ZStack {
-                            Circle()
-                                .fill(Color.appExpenseRed)
-                                .frame(width: 16, height: 16)
-                            Text("3")
-                                .font(.system(size: 9.5, weight: .bold))
-                                .foregroundColor(.white)
+                        // Mirrors exactly what NotificationView lists (unpaid, due within a
+                        // week) instead of a fixed "3", and disappears when there's nothing
+                        // waiting rather than claiming alerts that aren't there.
+                        if notificationCount > 0 {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.appExpenseRed)
+                                    .frame(width: 16, height: 16)
+                                Text("\(min(notificationCount, 9))")
+                                    .font(.system(size: 9.5, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                            .offset(x: 2, y: -2)
                         }
-                        .offset(x: 2, y: -2)
                     }
                 }
                 .buttonStyle(.plain)

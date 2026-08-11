@@ -14,6 +14,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppleSignInManager.loginStatusKey) private var isUserLoggedIn: Bool = false
     @AppStorage(AppConstants.Onboarding.completedKey) private var hasCompletedOnboarding: Bool = false
+    @AppStorage(AppConstants.Onboarding.setupStartedKey) private var hasStartedSetup: Bool = false
     @AppStorage("autoSyncEnabled") private var autoSyncEnabled: Bool = false
     @AppStorage("firebaseLastSyncDate") private var firebaseLastSyncDate: Double = 0
 
@@ -31,6 +32,10 @@ struct ContentView: View {
             // the dashboard. `hasCompletedOnboarding` is set only when the flow actually ends.
             if isSignedIn && hasCompletedOnboarding {
                 MainTabView()
+            } else if hasStartedSetup {
+                // Root-level swap rather than a push: the pre-sign-in pages are gone from the
+                // stack entirely, so a back-swipe out of setup has nothing to return to.
+                OnboardingSetupView()
             } else {
                 OnBoardingScreen()
             }

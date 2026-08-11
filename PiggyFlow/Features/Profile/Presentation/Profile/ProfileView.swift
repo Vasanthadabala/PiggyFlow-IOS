@@ -91,7 +91,7 @@ struct ProfileView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Are you sure you want to logout from PiggyFlow?")
+            Text("This clears all PiggyFlow data on this device — transactions, accounts, budgets and goals. Your cloud backup is kept, so signing back in restores it.")
         }
         .alert("Delete Account", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) {
@@ -558,21 +558,9 @@ struct ProfileView: View {
         .presentationDetents([.height(220)])
     }
 
+    /// Only used by the delete-account flow, so this is the full reset.
     private func clearLocalData() {
-        do {
-            let expenses = try context.fetch(FetchDescriptor<Expense>())
-            for item in expenses { context.delete(item) }
-
-            let incomes = try context.fetch(FetchDescriptor<Income>())
-            for item in incomes { context.delete(item) }
-
-            let trackers = try context.fetch(FetchDescriptor<TrackerRecord>())
-            for item in trackers { context.delete(item) }
-
-            try context.save()
-        } catch {
-            print("❌ Failed to clear local data: \(error.localizedDescription)")
-        }
+        DataManager.shared.wipeAllLocalData()
     }
 }
 

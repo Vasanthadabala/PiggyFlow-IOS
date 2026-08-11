@@ -38,6 +38,13 @@ enum ReceiptStorage {
         try? FileManager.default.removeItem(at: directory.appendingPathComponent(filename))
     }
 
+    /// Removes every stored receipt. Used when wiping local data, where deleting the expenses
+    /// one by one would leave their images orphaned on disk.
+    static func deleteAll() {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
+        files.forEach { try? FileManager.default.removeItem(at: $0) }
+    }
+
     /// Bytes on disk, for a "Size: 245 KB" row — `nil` if the file is missing.
     static func fileSize(_ filename: String) -> Int? {
         guard !filename.isEmpty else { return nil }

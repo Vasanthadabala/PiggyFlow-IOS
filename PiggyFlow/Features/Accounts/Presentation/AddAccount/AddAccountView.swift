@@ -19,7 +19,7 @@ struct AddAccountView: View {
     @State private var initialBalance: String = ""
     @State private var selectedSubType: String = "Savings Account"
     @State private var includeInNetBalance: Bool = true
-    @State private var isSavePressed: Bool = false
+    @State private var showHelp: Bool = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -49,6 +49,9 @@ struct AddAccountView: View {
             bottomSaveCTA
         }
         .navigationBarHidden(true)
+        .sheet(isPresented: $showHelp) {
+            AccountTypeHelpSheet()
+        }
     }
 
     // MARK: - Header Bar
@@ -67,6 +70,7 @@ struct AddAccountView: View {
 
                 Button {
                     Haptics.light()
+                    showHelp = true
                 } label: {
                     Image(systemName: "questionmark.circle")
                         .font(.system(size: 16, weight: .bold))
@@ -293,6 +297,79 @@ struct AddAccountView: View {
         AccountManager.shared.addAccount(newAccount)
         onSave?(newAccount)
         dismiss()
+    }
+}
+
+/// Explains what each account type is for. The rows are generated from `AccountCategory`
+/// itself, so a new type can't appear in the picker without also appearing in the help.
+private struct AccountTypeHelpSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Every account you add is counted in your net balance unless you turn that off. Balances stay on this device.")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    ForEach(Array(AccountCategory.allCases.enumerated()), id: \.element.id) { _, cat in
+                        HStack(alignment: .top, spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(cat.iconBgColor)
+                                    .frame(width: 38, height: 38)
+                                Image(systemName: cat.iconName)
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(cat.rawValue)
+                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                                Text(cat.caption)
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Spacer(minLength: 0)
+                        }
+                        .padding(12)
+                        .background(Color.appSurface)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "creditcard.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(Color.appGreenDeep)
+                        Text("Credit cards are stored as an outstanding amount, so their balance lowers your net total rather than adding to it.")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(12)
+                    .background(Color.appGreen.opacity(0.07))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .padding(16)
+            }
+            .background(Color.appBackground.ignoresSafeArea())
+            .navigationTitle("Account Types")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundColor(Color.appGreen)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 

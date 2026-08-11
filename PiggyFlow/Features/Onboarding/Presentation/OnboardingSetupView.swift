@@ -5,14 +5,16 @@ import SwiftData
 /// budget, a first savings goal, and reminder preferences.
 ///
 /// Unlike the onboarding pages before it, this section collects real input, so each step
-/// persists what it gathers rather than just advancing:
-/// * income and budget are **preferences** (`@AppStorage`), not ledger entries — the income
-///   screen's own copy promises "this won't be visible anywhere", and a budget figure the user
-///   can "update anytime in Settings" isn't a transaction either;
-/// * the goal step creates a real `TrackerRecord`, because the app already models goals that
-///   way and this screen collects exactly what one needs (category, target amount, target date);
-/// * reminder choices are preferences too — nothing here schedules a notification yet, so the
-///   copy deliberately promises the settings are saved, not that reminders are already firing.
+/// writes it to the database rather than just advancing:
+/// * income becomes an `Income` row, so it feeds Home's totals, Recent Transactions and reports;
+/// * the budget becomes a `TrackerRecord` of type `budget` with a blank category, meaning an
+///   all-spending monthly budget — `TrackerView` reads blank as "every expense this month";
+/// * the goal becomes a `TrackerRecord` of type `goal` (category, target amount, target date);
+/// * reminder choices stay preferences — there's no notification scheduling in the app yet, so
+///   the copy promises the settings are saved, not that reminders are already firing.
+///
+/// The amounts are mirrored into `@AppStorage` as well, purely so the final summary step can
+/// read them back without re-querying.
 ///
 /// Every step is skippable by leaving a field empty and continuing; nothing is fabricated to
 /// fill a gap.
@@ -28,8 +30,9 @@ struct OnboardingSetupView: View {
     @AppStorage(AppleSignInManager.loginStatusKey) private var isUserLoggedIn: Bool = false
     @AppStorage(AppConstants.Onboarding.completedKey) private var hasCompletedOnboarding: Bool = false
 
+    @AppStorage(AppConstants.Onboarding.setupStartedKey) private var hasStartedSetup: Bool = false
+
     @State private var step: Int = 0
-    @State private var navigateToHome: Bool = false
 
     // Step 1 — income
     @State private var incomeText: String = ""
@@ -110,7 +113,7 @@ struct OnboardingSetupView: View {
                     .padding(.top, 10)
 
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 18) {
+                    VStack(spacing: 14) {
                         switch step {
                         case 0: incomeStep
                         case 1: budgetStep
@@ -120,8 +123,8 @@ struct OnboardingSetupView: View {
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 14)
-                    .padding(.bottom, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 10)
                 }
                 .scrollDismissesKeyboard(.interactively)
 
@@ -131,9 +134,6 @@ struct OnboardingSetupView: View {
         .navigationBarHidden(true)
         .sheet(isPresented: $showGoalDatePicker) {
             GoalTargetDateSheet(date: goalDate ?? Date()) { goalDate = $0 }
-        }
-        .navigationDestination(isPresented: $navigateToHome) {
-            MainTabView()
         }
     }
 
@@ -186,23 +186,23 @@ struct OnboardingSetupView: View {
     // MARK: - Step 1: Income
 
     private var incomeStep: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 14) {
             stepHeader(
                 image: "setup_income_hero",
-                imageHeight: 92,
+                imageHeight: 68,
                 lead: "Let's add your\nmonthly ",
                 highlight: "income",
                 subtitle: "This helps us personalize your experience and give better insights."
             )
 
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("How much do you earn monthly?")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
 
                 amountField(text: $incomeText, placeholder: "0")
 
-                Text("This won't be visible anywhere. It's just for your insights.")
+                Text("Saved to your income so your insights and reports stay accurate.")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -218,7 +218,7 @@ struct OnboardingSetupView: View {
                 Divider().padding(.vertical, 2)
 
                 Text("How often do you receive it?")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
 
                 HStack(spacing: 8) {
@@ -240,7 +240,7 @@ struct OnboardingSetupView: View {
                     tail: " section."
                 )
             }
-            .padding(16)
+            .padding(14)
             .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
@@ -250,10 +250,10 @@ struct OnboardingSetupView: View {
     // MARK: - Step 2: Budget
 
     private var budgetStep: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 14) {
             stepHeader(
                 image: "setup_budget_hero",
-                imageHeight: 170,
+                imageHeight: 118,
                 lead: "Let's set your\n",
                 highlight: "monthly budget",
                 subtitle: "A budget helps you plan better and spend smarter."
@@ -261,7 +261,7 @@ struct OnboardingSetupView: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("How much would you like to budget per month?")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -275,14 +275,14 @@ struct OnboardingSetupView: View {
                 }
                 .foregroundColor(Color.appGreen)
             }
-            .padding(16)
+            .padding(14)
             .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("Quick select")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -336,10 +336,10 @@ struct OnboardingSetupView: View {
     // MARK: - Step 3: Goal
 
     private var goalStep: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 14) {
             stepHeader(
                 image: "setup_goal_hero",
-                imageHeight: 170,
+                imageHeight: 96,
                 lead: "Let's set your\n",
                 highlight: "first savings goal 🎯",
                 subtitle: "Goals keep you motivated and help you build a better financial future."
@@ -347,7 +347,7 @@ struct OnboardingSetupView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("What's your goal?")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
 
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
@@ -363,14 +363,14 @@ struct OnboardingSetupView: View {
                 }
 
                 Text("How much would you like to save?")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                     .padding(.top, 4)
 
                 amountField(text: $goalAmountText, placeholder: "0")
 
                 Text("Target date")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                     .padding(.top, 4)
 
@@ -414,10 +414,10 @@ struct OnboardingSetupView: View {
     // MARK: - Step 4: Reminders
 
     private var remindersStep: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 14) {
             stepHeader(
                 image: "setup_reminders_hero",
-                imageHeight: 150,
+                imageHeight: 104,
                 lead: "Stay on track with\n",
                 highlight: "smart reminders 🔔",
                 subtitle: "We'll remind you about bills, budgets and goals so you never miss anything."
@@ -425,7 +425,7 @@ struct OnboardingSetupView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("When do you want to receive reminders?")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -489,7 +489,7 @@ struct OnboardingSetupView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 Text("What you'll get reminders for")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                     .padding(.top, 4)
 
@@ -557,23 +557,23 @@ struct OnboardingSetupView: View {
     }
 
     private var summaryStep: some View {
-        VStack(spacing: 18) {
-            VStack(spacing: 12) {
+        VStack(spacing: 14) {
+            VStack(spacing: 8) {
                 Image("setup_complete_hero")
                     .resizable()
                     .scaledToFit()
-                    .frame(height: 170)
+                    .frame(height: 112)
 
                 (
                     Text("You're all set! 🎉\nLet's build your\n").foregroundColor(.primary)
                     + Text("financial freedom 💚").foregroundColor(Color.appGreen)
                 )
-                .font(.system(size: 25, weight: .heavy, design: .rounded))
+                .font(.system(size: 22, weight: .heavy, design: .rounded))
                 .multilineTextAlignment(.center)
-                .minimumScaleFactor(0.8)
+                .minimumScaleFactor(0.75)
 
                 Text("Your account is ready to go. Let's take you to your dashboard.")
-                    .font(.system(size: 13.5, weight: .medium, design: .rounded))
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -581,7 +581,7 @@ struct OnboardingSetupView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 Text("Here's what you've set up")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                     .padding(.horizontal, 14)
                     .padding(.top, 14)
@@ -668,7 +668,7 @@ struct OnboardingSetupView: View {
 
     @ViewBuilder
     private func stepHeader(image: String, imageHeight: CGFloat, lead: String, highlight: String, subtitle: String) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             Image(image)
                 .resizable()
                 .scaledToFit()
@@ -678,12 +678,12 @@ struct OnboardingSetupView: View {
                 Text(lead).foregroundColor(.primary)
                 + Text(highlight).foregroundColor(Color.appGreen)
             )
-            .font(.system(size: 25, weight: .heavy, design: .rounded))
+            .font(.system(size: 22, weight: .heavy, design: .rounded))
             .multilineTextAlignment(.center)
-            .minimumScaleFactor(0.8)
+            .minimumScaleFactor(0.75)
 
             Text(subtitle)
-                .font(.system(size: 13.5, weight: .medium, design: .rounded))
+                .font(.system(size: 12.5, weight: .medium, design: .rounded))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -693,14 +693,14 @@ struct OnboardingSetupView: View {
     private func amountField(text: Binding<String>, placeholder: String) -> some View {
         HStack(spacing: 8) {
             Text(AppConstants.Currency.symbol)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(.system(size: 19, weight: .bold, design: .rounded))
                 .foregroundColor(.primary)
 
             TextField(placeholder, text: Binding(
                 get: { text.wrappedValue },
                 set: { text.wrappedValue = AmountInput.formatted($0) }
             ))
-            .font(.system(size: 22, weight: .bold, design: .rounded))
+            .font(.system(size: 19, weight: .bold, design: .rounded))
             .keyboardType(.decimalPad)
             .textFieldStyle(.plain)
 
@@ -709,7 +709,7 @@ struct OnboardingSetupView: View {
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 14)
+        .padding(.vertical, 12)
         .background(Color.appSurface)
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -724,9 +724,9 @@ struct OnboardingSetupView: View {
             Haptics.light()
             action()
         } label: {
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 17, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundColor(isSelected ? Color.appGreenDeep : .secondary)
                 Text(title)
                     .font(.system(size: 11.5, weight: .bold, design: .rounded))
@@ -735,7 +735,7 @@ struct OnboardingSetupView: View {
                     .minimumScaleFactor(0.7)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, 9)
             .background(isSelected ? Color.appGreen.opacity(0.10) : Color.appSurface)
             .overlay(
                 ZStack(alignment: .topTrailing) {
@@ -820,7 +820,7 @@ struct OnboardingSetupView: View {
         case 1: return "Save & Continue"
         case 2: return "Create Goal"
         case 3: return "Continue"
-        default: return "Go to Dashboard"
+        default: return "Go to Home"
         }
     }
 
@@ -838,9 +838,11 @@ struct OnboardingSetupView: View {
                 Haptics.medium()
                 commitCurrentStep()
                 if step == totalSteps - 1 {
+                    // Root-level swap in `ContentView` — no push, so the setup steps leave the
+                    // stack and Home can't be swiped back out of.
                     isUserLoggedIn = true
+                    hasStartedSetup = false
                     hasCompletedOnboarding = true
-                    navigateToHome = true
                 } else {
                     withAnimation(.easeInOut(duration: 0.22)) { step += 1 }
                 }
@@ -852,7 +854,7 @@ struct OnboardingSetupView: View {
                         .font(.system(size: 15, weight: .bold))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, 15)
                 .foregroundColor(.white)
                 .background(Color.appGreenDeep)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -870,26 +872,10 @@ struct OnboardingSetupView: View {
                 .foregroundColor(.secondary)
             }
 
-            // Both paths land on the dashboard — there's no separate guided tour to opt out
-            // of — so this is a softer-worded second door to the same place, not a different
-            // destination.
-            if step == totalSteps - 1 {
-                Button {
-                    Haptics.light()
-                    isUserLoggedIn = true
-                    hasCompletedOnboarding = true
-                    navigateToHome = true
-                } label: {
-                    Text("I'll explore on my own")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(Color.appGreen)
-                }
-                .buttonStyle(.plain)
-            }
         }
         .padding(.horizontal, 24)
-        .padding(.top, 10)
-        .padding(.bottom, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
         .background(Color.appBackground)
     }
 
@@ -901,13 +887,42 @@ struct OnboardingSetupView: View {
         switch step {
         case 0:
             let value = AmountInput.value(of: incomeText)
-            if value > 0 {
-                monthlyIncome = value
-                incomeFrequency = selectedFrequency
-            }
+            guard value > 0 else { return }
+            monthlyIncome = value
+            incomeFrequency = selectedFrequency
+            // A real `Income` row, not just a preference — this is what makes the figure show
+            // up in Home's totals, Recent Transactions and the reports, instead of being
+            // collected and then invisible.
+            let income = Income(
+                type: "Salary",
+                emoji: "💰",
+                name: "Monthly Income",
+                income: value,
+                date: Date(),
+                incomeType: selectedFrequency
+            )
+            context.insert(income)
+            try? context.save()
+            CloudSyncManager.shared.queueIncomeUpsert(income)
+
         case 1:
             let value = AmountInput.value(of: budgetText)
-            if value > 0 { monthlyBudget = value }
+            guard value > 0 else { return }
+            monthlyBudget = value
+            // Stored as a real budget tracker so it appears on the Tracker screen. Its category
+            // is left blank on purpose: this is an all-spending monthly budget rather than a
+            // per-category one, and `TrackerView` reads a blank category as "everything".
+            let budget = TrackerRecord(
+                type: "budget",
+                name: "Monthly Budget",
+                subType: "monthly",
+                amount: value,
+                dueDate: Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date())) ?? Date(),
+                logoUrl: "chart.pie.fill",
+                category: ""
+            )
+            context.insert(budget)
+            try? context.save()
         case 2:
             let value = AmountInput.value(of: goalAmountText)
             guard value > 0 else { return }
@@ -941,29 +956,21 @@ private struct GoalTargetDateSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
+            VStack(spacing: 0) {
+                // Picking a day *is* the decision — committing on selection saves scrolling
+                // back up to a confirm button that only ever repeated the same choice.
                 DatePicker("Target date", selection: $date, in: Date()..., displayedComponents: .date)
                     .datePickerStyle(.graphical)
                     .tint(Color.appGreen)
+                    .onChange(of: date) { _, newValue in
+                        onSave(newValue)
+                        dismiss()
+                    }
 
-                Spacer()
-
-                Button {
-                    Haptics.medium()
-                    onSave(date)
-                    dismiss()
-                } label: {
-                    Text("Set Target Date")
-                        .font(.system(size: 15.5, weight: .bold, design: .rounded))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .foregroundColor(.white)
-                        .background(Color.appGreenDeep)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .buttonStyle(.plain)
+                Spacer(minLength: 0)
             }
-            .padding(20)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
             .background(Color.appBackground.ignoresSafeArea())
             .navigationTitle("Target Date")
             .navigationBarTitleDisplayMode(.inline)
@@ -975,7 +982,7 @@ private struct GoalTargetDateSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
     }
 }

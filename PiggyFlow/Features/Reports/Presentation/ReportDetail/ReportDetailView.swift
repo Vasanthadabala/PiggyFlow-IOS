@@ -472,8 +472,15 @@ struct ReportDetailView: View {
 
     private func curvePath(points: [CGPoint], height: CGFloat, closeToBottom: Bool) -> Path {
         Path { path in
-            if closeToBottom { path.move(to: CGPoint(x: points[0].x, y: height)) }
-            path.move(to: points[0])
+            // `points` comes from zipping the X and Y fraction arrays, and those can disagree
+            // in length — `trendFractionsX` substitutes a single mid-point when there's less
+            // than two weeks of data, while `fractionsY` follows `weeklyTrend` and can be
+            // empty. The zip then yields nothing and the subscripts below crash, so bail out
+            // to an empty path instead.
+            guard let first = points.first, let last = points.last else { return }
+
+            if closeToBottom { path.move(to: CGPoint(x: first.x, y: height)) }
+            path.move(to: first)
             for i in 1..<points.count {
                 let prev = points[i-1]
                 let current = points[i]
@@ -482,7 +489,7 @@ struct ReportDetailView: View {
                 path.addCurve(to: current, control1: control1, control2: control2)
             }
             if closeToBottom {
-                path.addLine(to: CGPoint(x: points.last!.x, y: height))
+                path.addLine(to: CGPoint(x: last.x, y: height))
                 path.closeSubpath()
             }
         }

@@ -27,7 +27,6 @@ struct AddExpenseBottomSheetView: View {
     @State private var expenseScreenCategory: CategoryType? = nil
     @State private var showScanSheet: Bool = false
     @State private var showAddAccountSheet: Bool = false
-    @State private var showGoalSheet: Bool = false
 
     @State private var entryType: EntryType
     @State private var selectedCategory: CategoryType? = nil
@@ -36,7 +35,6 @@ struct AddExpenseBottomSheetView: View {
     @State private var dateValue: Date = Date()
     @State private var note: String = ""
     @State private var incomeText: String = ""
-    @State private var isSubmitPressed = false
 
     private var isSubmitEnabled: Bool {
         switch entryType {
@@ -433,18 +431,30 @@ struct AddExpenseBottomSheetView: View {
                 .foregroundColor(.primary)
 
             HStack(spacing: 0) {
-                quickActionButton(icon: "square.and.pencil", iconColor: .appGreen, bgColor: Color.appGreen.opacity(0.12), title: "Add Note")
-                quickActionButton(icon: "car.fill", iconColor: Color(red: 37/255, green: 99/255, blue: 235/255), bgColor: Color(red: 239/255, green: 246/255, blue: 255/255), title: "Add Vehicle")
-                quickActionButton(icon: "person.2.fill", iconColor: Color(red: 147/255, green: 51/255, blue: 234/255), bgColor: Color(red: 243/255, green: 232/255, blue: 255/255), title: "Split Expense")
-                quickActionButton(icon: "bookmark.fill", iconColor: Color(red: 249/255, green: 115/255, blue: 22/255), bgColor: Color(red: 254/255, green: 243/255, blue: 235/255), title: "Add Reminder")
+                // Notes live on the expense form, so this is the same door with the note in mind.
+                quickActionButton(icon: "square.and.pencil", iconColor: .appGreen, bgColor: Color.appGreen.opacity(0.12), title: "Add Note") {
+                    expenseScreenCategory = nil
+                    withAnimation(.easeInOut(duration: 0.28)) { showAddExpenseScreen = true }
+                }
+                quickActionButton(icon: "car.fill", iconColor: Color(red: 37/255, green: 99/255, blue: 235/255), bgColor: Color(red: 239/255, green: 246/255, blue: 255/255), title: "Fuel Expense") {
+                    expenseScreenCategory = .fuel
+                    withAnimation(.easeInOut(duration: 0.28)) { showAddExpenseScreen = true }
+                }
+                quickActionButton(icon: "wallet.pass.fill", iconColor: Color(red: 147/255, green: 51/255, blue: 234/255), bgColor: Color(red: 243/255, green: 232/255, blue: 255/255), title: "Add Account") {
+                    withAnimation(.easeInOut(duration: 0.28)) { showAddAccountSheet = true }
+                }
+                quickActionButton(icon: "bookmark.fill", iconColor: Color(red: 249/255, green: 115/255, blue: 22/255), bgColor: Color(red: 254/255, green: 243/255, blue: 235/255), title: "Add Tracker") {
+                    expenseBottomSheetDismiss()
+                }
             }
         }
     }
 
     @ViewBuilder
-    private func quickActionButton(icon: String, iconColor: Color, bgColor: Color, title: String) -> some View {
+    private func quickActionButton(icon: String, iconColor: Color, bgColor: Color, title: String, action: @escaping () -> Void) -> some View {
         Button {
             Haptics.light()
+            action()
         } label: {
             VStack(spacing: 8) {
                 Circle()

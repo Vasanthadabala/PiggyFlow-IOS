@@ -218,7 +218,10 @@ struct TransactionDetailView: View {
                         .foregroundColor(.primary)
                 }
                 Spacer()
-                Button { } label: {
+                Button {
+                    Haptics.light()
+                    showEditSheet = true
+                } label: {
                     Text("Edit Split")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundColor(.appGreen)
@@ -325,7 +328,10 @@ struct TransactionDetailView: View {
                         .foregroundColor(.primary)
                 }
                 Spacer()
-                Button { } label: {
+                Button {
+                    Haptics.light()
+                    showEditSheet = true
+                } label: {
                     Text("Edit Note")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundColor(.appGreen)

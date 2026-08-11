@@ -23,6 +23,10 @@ enum AppConstants {
     /// states — see `ContentView` for why conflating them broke the flow.
     enum Onboarding {
         public static let completedKey = "hasCompletedOnboarding"
+        /// Set once sign-in succeeds and the setup steps take over. Swapping the *root* on this
+        /// rather than pushing the setup flow means the pre-sign-in pages leave the navigation
+        /// stack entirely, so there's nothing to swipe back to.
+        public static let setupStartedKey = "hasStartedOnboardingSetup"
     }
 
     /// Keychain account identifiers.

@@ -7,7 +7,6 @@ struct AccountsView: View {
 
     @State private var isBalanceHidden: Bool = false
     @State private var showAddAccountSheet: Bool = false
-    @State private var selectedAccountForDetail: Account?
 
     private var accounts: [Account] { accountManager.accounts }
 
@@ -82,8 +81,20 @@ struct AccountsView: View {
 
                 Spacer()
 
-                Button {
-                    Haptics.light()
+                Menu {
+                    Button {
+                        Haptics.light()
+                        showAddAccountSheet = true
+                    } label: {
+                        Label("Add Account", systemImage: "plus")
+                    }
+                    Button {
+                        Haptics.light()
+                        isBalanceHidden.toggle()
+                    } label: {
+                        Label(isBalanceHidden ? "Show Balances" : "Hide Balances",
+                              systemImage: isBalanceHidden ? "eye" : "eye.slash")
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 16, weight: .bold))
@@ -92,7 +103,6 @@ struct AccountsView: View {
                         .background(Color.appGreen.opacity(0.12))
                         .clipShape(Circle())
                 }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
 

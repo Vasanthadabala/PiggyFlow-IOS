@@ -6,8 +6,39 @@ struct ExpensesView: View {
     @Query private var expenses: [Expense]
     @Query private var incomes: [Income]
 
-    @State private var selectedDateRange: String = "May 1 – May 31, 2025"
-    @State private var showDatePicker: Bool = false
+    @State private var selectedPeriod: PeriodFilter = .allTime
+
+    /// The label used to read "May 1 – May 31, 2025" no matter what the data covered, while
+    /// the totals underneath were computed over every expense ever recorded. Now the chip both
+    /// states the real period and controls it.
+    enum PeriodFilter: String, CaseIterable, Identifiable {
+        case thisMonth = "This Month"
+        case lastMonth = "Last Month"
+        case thisYear = "This Year"
+        case allTime = "All Time"
+
+        var id: String { rawValue }
+
+        func interval(now: Date = Date()) -> DateInterval? {
+            let cal = Calendar.current
+            switch self {
+            case .allTime: return nil
+            case .thisMonth: return cal.dateInterval(of: .month, for: now)
+            case .lastMonth:
+                guard let prev = cal.date(byAdding: .month, value: -1, to: now) else { return nil }
+                return cal.dateInterval(of: .month, for: prev)
+            case .thisYear: return cal.dateInterval(of: .year, for: now)
+            }
+        }
+
+        var rangeText: String {
+            guard let interval = interval() else { return "All Time" }
+            let end = Calendar.current.date(byAdding: .day, value: -1, to: interval.end) ?? interval.end
+            let from = DateFormatter(); from.dateFormat = "MMM d"
+            let to = DateFormatter(); to.dateFormat = "MMM d, yyyy"
+            return "\(from.string(from: interval.start)) – \(to.string(from: end))"
+        }
+    }
     @State private var showSearchSheet: Bool = false
     @State private var showFilterSheet: Bool = false
     @State private var activeSheet: ActionSheetType?
@@ -17,8 +48,15 @@ struct ExpensesView: View {
         var id: Int { hashValue }
     }
 
+    /// Expenses inside the selected period — the single funnel every figure on this screen
+    /// reads, so the header chip can never disagree with the numbers below it.
+    private var periodExpenses: [Expense] {
+        guard let interval = selectedPeriod.interval() else { return expenses }
+        return expenses.filter { interval.contains($0.date) }
+    }
+
     private var totalExpensesAmount: Double {
-        expenses.reduce(0) { $0 + $1.price }
+        periodExpenses.reduce(0) { $0 + $1.price }
     }
 
     // MARK: - Real data
@@ -33,15 +71,15 @@ struct ExpensesView: View {
     ]
 
     private var categoryBreakdown: [CategoryTotal] {
-        CalculateExpenseSummaryUseCase.categoryBreakdown(of: expenses, total: totalExpensesAmount)
+        CalculateExpenseSummaryUseCase.categoryBreakdown(of: periodExpenses, total: totalExpensesAmount)
     }
 
     private var topCategory: CategoryTotal? { categoryBreakdown.first }
     private var expenseChange: Double? { SpendingAggregates.monthOverMonthChange(in: expenses) }
-    private var topMerchants: [SpendingAggregates.MerchantTotal] { SpendingAggregates.topMerchants(in: expenses, limit: 5) }
+    private var topMerchants: [SpendingAggregates.MerchantTotal] { SpendingAggregates.topMerchants(in: periodExpenses, limit: 5) }
 
     private var recentExpenses: [Expense] {
-        expenses.sorted { $0.date > $1.date }.prefix(4).map { $0 }
+        periodExpenses.sorted { $0.date > $1.date }.prefix(4).map { $0 }
     }
 
     private var categoryDonutSegments: [(start: CGFloat, end: CGFloat, color: Color)] {
@@ -172,16 +210,24 @@ struct ExpensesView: View {
                     .foregroundColor(Color(red: 20/255, green: 40/255, blue: 25/255))
 
                 // Date Selector Dropdown Button
-                HStack(spacing: 4) {
-                    Text(selectedDateRange)
-                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
-                        .foregroundColor(.primary)
+                Menu {
+                    Picker("Period", selection: $selectedPeriod) {
+                        ForEach(PeriodFilter.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(selectedPeriod.rangeText)
+                            .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
 
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.secondary)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
                 }
-                .padding(.vertical, 4)
 
                 // Month-over-Month Comparison Label
                 if let expenseChange {

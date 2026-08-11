@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct RecentTransactionsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -12,6 +13,42 @@ struct RecentTransactionsView: View {
     @State private var selectedTypeFilter: String = "All"
     @State private var showAddTransactionSheet: Bool = false
     @State private var collapsedDates: Set<String> = []
+    @State private var dateRange: DateRangeFilter = .thisMonth
+    @State private var showExportShare: Bool = false
+    @State private var exportURL: URL? = nil
+
+    /// Ranges the date chip offers. `.allTime` is the default-off escape hatch so a user whose
+    /// transactions predate this month can still see them.
+    enum DateRangeFilter: String, CaseIterable, Identifiable {
+        case thisMonth = "This Month"
+        case lastMonth = "Last Month"
+        case last90 = "Last 90 Days"
+        case thisYear = "This Year"
+        case allTime = "All Time"
+
+        var id: String { rawValue }
+
+        var shortLabel: String { self == .allTime ? "All Time" : rawValue }
+
+        /// `nil` means no bound — everything qualifies.
+        func interval(now: Date = Date()) -> DateInterval? {
+            let cal = Calendar.current
+            switch self {
+            case .allTime:
+                return nil
+            case .thisMonth:
+                return cal.dateInterval(of: .month, for: now)
+            case .lastMonth:
+                guard let prev = cal.date(byAdding: .month, value: -1, to: now) else { return nil }
+                return cal.dateInterval(of: .month, for: prev)
+            case .last90:
+                guard let start = cal.date(byAdding: .day, value: -90, to: now) else { return nil }
+                return DateInterval(start: cal.startOfDay(for: start), end: now)
+            case .thisYear:
+                return cal.dateInterval(of: .year, for: now)
+            }
+        }
+    }
 
     private let typeFilters = ["All", "Income", "Expense", "Account", "Category", "More"]
 
@@ -38,6 +75,9 @@ struct RecentTransactionsView: View {
         case "Income":  items = items.filter { if case .income = $0 { return true }; return false }
         case "Expense": items = items.filter { if case .expense = $0 { return true }; return false }
         default: break
+        }
+        if let interval = dateRange.interval() {
+            items = items.filter { interval.contains($0.date) }
         }
         return items
     }
@@ -118,7 +158,10 @@ struct RecentTransactionsView: View {
                                         .foregroundColor(.secondary)
                                 }
                                 Spacer()
-                                Button { } label: {
+                                Button {
+                                    Haptics.medium()
+                                    exportFilteredTransactions()
+                                } label: {
                                     HStack(spacing: 4) {
                                         Text("Export")
                                             .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -145,6 +188,64 @@ struct RecentTransactionsView: View {
         .fullScreenCover(isPresented: $showAddTransactionSheet) {
             AddExpenseBottomSheetView(itemToEdit: nil)
         }
+        .sheet(isPresented: $showExportShare) {
+            if let exportURL {
+                ActivityViewController(activityItems: [exportURL])
+            }
+        }
+    }
+
+    /// Exports exactly what the list is showing — the same search, type and date filters — so
+    /// the PDF matches the screen rather than silently dumping the whole ledger.
+    private func exportFilteredTransactions() {
+        let items = filteredItems
+        guard !items.isEmpty else { return }
+
+        let title = "PiggyFlow Transactions — \(dateRange.rawValue)"
+        let format = UIGraphicsPDFRendererFormat()
+        format.documentInfo = [
+            kCGPDFContextCreator: "PiggyFlow",
+            kCGPDFContextTitle: title
+        ] as [String: Any]
+
+        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
+
+        let data = renderer.pdfData { context in
+            context.beginPage()
+            var y: CGFloat = 40
+            title.draw(at: CGPoint(x: 40, y: y), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 20)])
+            y += 34
+            y = PDFTableRenderer.drawHeader(y: y)
+
+            for item in items {
+                // A new page before running off the bottom, otherwise long exports silently
+                // truncate at whatever fits on page one.
+                if y > pageRect.height - 60 {
+                    context.beginPage()
+                    y = 40
+                    y = PDFTableRenderer.drawHeader(y: y)
+                }
+                let isIncome = item.color == .appGreen
+                let name = item.title.isEmpty ? item.type : item.title
+                y = PDFTableRenderer.drawRow(
+                    name: name,
+                    amount: AppFormatter.signedCurrency(item.amount, isIncome: isIncome),
+                    date: item.date.formatted(.dateTime.month(.abbreviated).day().year()),
+                    y: y
+                )
+            }
+        }
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PiggyFlow_Transactions.pdf")
+        do {
+            try data.write(to: url)
+            exportURL = url
+            showExportShare = true
+        } catch {
+            Log.error(error, context: "Writing transactions PDF", category: .database)
+        }
     }
 
     // MARK: - Header Bar
@@ -162,7 +263,16 @@ struct RecentTransactionsView: View {
                     .foregroundColor(.secondary)
             }
             Spacer()
-            Button { } label: {
+            Menu {
+                Picker("Show", selection: $selectedTypeFilter) {
+                    Text("All").tag("All")
+                    Text("Income").tag("Income")
+                    Text("Expense").tag("Expense")
+                }
+                Picker("Period", selection: $dateRange) {
+                    ForEach(DateRangeFilter.allCases) { Text($0.rawValue).tag($0) }
+                }
+            } label: {
                 Image(systemName: "line.3.horizontal.decrease")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.appGreen)
@@ -170,7 +280,6 @@ struct RecentTransactionsView: View {
                     .background(Color.appGreen.opacity(0.12))
                     .clipShape(Circle())
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
@@ -256,11 +365,15 @@ struct RecentTransactionsView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             // Date range
-            Button { } label: {
+            Menu {
+                Picker("Period", selection: $dateRange) {
+                    ForEach(DateRangeFilter.allCases) { Text($0.rawValue).tag($0) }
+                }
+            } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "calendar")
                         .font(.system(size: 12, weight: .bold))
-                    Text("May 1 – May 31")
+                    Text(dateRange.shortLabel)
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                     Image(systemName: "chevron.down")
                         .font(.system(size: 10, weight: .bold))

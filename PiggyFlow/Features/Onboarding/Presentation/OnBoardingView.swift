@@ -5,8 +5,7 @@ struct OnBoardingScreen: View {
     @EnvironmentObject var appleSignInManager: AppleSignInManager
     @AppStorage(AppleSignInManager.loginStatusKey) private var isUserLoggedIn: Bool = false
     @AppStorage(AppConstants.Onboarding.completedKey) private var hasCompletedOnboarding: Bool = false
-    @State private var navigateToLoginOptions: Bool = false
-    @State private var navigateToSetup: Bool = false
+    @AppStorage(AppConstants.Onboarding.setupStartedKey) private var hasStartedSetup: Bool = false
     @State private var didStartAuthFlow: Bool = false
     @State private var showSignInToast: Bool = false
     @State private var isButtonPressed = false
@@ -173,12 +172,6 @@ struct OnBoardingScreen: View {
                     signInToast
                 }
             }
-            .navigationDestination(isPresented: $navigateToLoginOptions) {
-                LoginOptionsView()
-            }
-            .navigationDestination(isPresented: $navigateToSetup) {
-                OnboardingSetupView()
-            }
         }
         .alert("Authentication Error", isPresented: Binding(
             get: { appleSignInManager.authErrorMessage != nil },
@@ -208,6 +201,17 @@ struct OnBoardingScreen: View {
             // satisfy the root's `isSignedIn && hasCompletedOnboarding` check mid-flow, swapping
             // the root out to the dashboard the moment auth succeeded.
             hasCompletedOnboarding = false
+            hasStartedSetup = false
+        }
+    }
+
+    /// Skip and "Log in" both mean "take me to sign in", and the sign-up page *is* the sign-in
+    /// screen — its Google/Apple buttons serve new and returning users alike. So both jump to
+    /// the last page rather than pushing the older separate login screen on top of the tour.
+    private func goToSignUpPage() {
+        guard currentPage != pages.count - 1 else { return }
+        withAnimation(.easeInOut(duration: 0.3)) {
+            currentPage = pages.count - 1
         }
     }
 
@@ -227,7 +231,9 @@ struct OnBoardingScreen: View {
         // it so the toast is seen on this screen rather than flashing over the next one.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
             withAnimation(.easeOut(duration: 0.2)) { showSignInToast = false }
-            navigateToSetup = true
+            // Flips the root over to the setup steps — see `ContentView`. Not a push, so the
+            // onboarding pages are dropped from the stack and can't be swiped back to.
+            hasStartedSetup = true
         }
     }
 
@@ -286,7 +292,7 @@ struct OnBoardingScreen: View {
             if !currentPageModel.isFinalAuthPage {
                 Button {
                     Haptics.light()
-                    navigateToLoginOptions = true
+                    goToSignUpPage()
                 } label: {
                     HStack(spacing: 4) {
                         Text("Skip")
@@ -578,7 +584,7 @@ struct OnBoardingScreen: View {
             Button {
                 if isLastPage {
                     Haptics.medium()
-                    navigateToLoginOptions = true
+                    goToSignUpPage()
                 } else {
                     Haptics.light()
                     withAnimation(.easeInOut(duration: 0.25)) { currentPage += 1 }
@@ -608,7 +614,7 @@ struct OnBoardingScreen: View {
 
             Button {
                 Haptics.light()
-                navigateToLoginOptions = true
+                goToSignUpPage()
             } label: {
                 HStack(spacing: 4) {
                     Text("Already have an account?")
@@ -689,7 +695,7 @@ struct OnBoardingScreen: View {
 
             Button {
                 Haptics.light()
-                navigateToLoginOptions = true
+                goToSignUpPage()
             } label: {
                 HStack(spacing: 4) {
                     Text("Already have an account?")

@@ -36,13 +36,28 @@ struct StatsView: View {
 
     @State private var selectedMonth: Date = Date()
     @State private var showingDatePicker = false
+    @State private var showSearchField = false
+    @State private var searchText: String = ""
     @State private var selectedCategory: CategoryData? = nil
 
     // MARK: - Computed Properties
 
+    /// Month window plus the optional search term. Every section (totals, categories,
+    /// merchants, transactions) reads from here, so searching narrows the whole screen
+    /// consistently instead of just one list.
     private var filteredExpenses: [Expense] {
         let calendar = Calendar.current
-        return expenses.filter { calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month) }
+        var result = expenses.filter { calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month) }
+        let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
+        if !query.isEmpty {
+            result = result.filter {
+                $0.name.lowercased().contains(query)
+                    || $0.type.lowercased().contains(query)
+                    || $0.merchant.lowercased().contains(query)
+                    || $0.note.lowercased().contains(query)
+            }
+        }
+        return result
     }
 
     private var filteredIncomes: [Income] {
@@ -159,6 +174,7 @@ struct StatsView: View {
     // MARK: - Header Bar
 
     private var headerBar: some View {
+        VStack(spacing: 0) {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Expenses")
@@ -170,8 +186,14 @@ struct StatsView: View {
             }
             Spacer()
             HStack(spacing: 10) {
-                Button { } label: {
-                    Image(systemName: "magnifyingglass")
+                Button {
+                    Haptics.light()
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showSearchField.toggle()
+                        if !showSearchField { searchText = "" }
+                    }
+                } label: {
+                    Image(systemName: showSearchField ? "xmark" : "magnifyingglass")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.appGreen)
                         .frame(width: 38, height: 38)
@@ -179,7 +201,13 @@ struct StatsView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
-                Button { } label: {
+                Menu {
+                    Picker("Month", selection: $selectedMonth) {
+                        ForEach(recentMonths, id: \.self) { month in
+                            Text(month.formatted(.dateTime.month(.wide).year())).tag(month)
+                        }
+                    }
+                } label: {
                     Image(systemName: "line.3.horizontal.decrease")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.appGreen)
@@ -187,13 +215,49 @@ struct StatsView: View {
                         .background(Color.appGreen.opacity(0.10))
                         .clipShape(Circle())
                 }
-                .buttonStyle(.plain)
             }
+        }
+
+        if showSearchField {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+                TextField("Search this month's expenses", text: $searchText)
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .textFieldStyle(.plain)
+                    .autocorrectionDisabled()
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color.appSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.top, 8)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 8)
         .background(Color.appBackground)
+    }
+
+    /// The current month plus the previous eleven — enough to cover a year of history without
+    /// offering months the user has no data for at all.
+    private var recentMonths: [Date] {
+        let cal = Calendar.current
+        let base = cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()
+        return (0..<12).compactMap { cal.date(byAdding: .month, value: -$0, to: base) }
     }
 
     // MARK: - Summary Card
@@ -409,7 +473,8 @@ struct StatsView: View {
                 Text("Expenses by Category")
                     .font(.system(size: 16, weight: .bold, design: .rounded))
                 Spacer()
-                Button { } label: {
+                // Full category breakdown + donut.
+                NavigationLink(destination: ReportDetailView().hidesTabBarOnPush()) {
                     HStack(spacing: 2) {
                         Text("View All")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -479,7 +544,8 @@ struct StatsView: View {
                 Text("Top Merchants")
                     .font(.system(size: 16, weight: .bold, design: .rounded))
                 Spacer()
-                Button { } label: {
+                // Merchants are derived from transactions.
+                NavigationLink(destination: RecentTransactionsView().hidesTabBarOnPush()) {
                     HStack(spacing: 2) {
                         Text("View All")
                             .font(.system(size: 13, weight: .bold, design: .rounded))

@@ -122,6 +122,7 @@ struct UpcomingPaymentsView: View {
 
                 Button {
                     Haptics.light()
+                    showAddTrackerSheet = true
                 } label: {
                     Image(systemName: "calendar.badge.plus")
                         .font(.system(size: 16, weight: .bold))

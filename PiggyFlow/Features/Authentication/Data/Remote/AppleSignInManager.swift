@@ -208,6 +208,12 @@ class AppleSignInManager: NSObject, ObservableObject {
 
         CloudSyncManager.shared.handleLogout()
 
+        // Logging out clears everything this device holds — ledger, accounts, categories,
+        // receipt images and the preferences onboarding gathered. The Firestore backup is
+        // deliberately left alone, so signing back in can restore it; wiping the cloud copy is
+        // `deleteAccount`'s job, not this one.
+        DataManager.shared.wipeAllLocalData()
+
         // Reset authentication state — ContentView switches to onboarding once both
         // isAuthenticated and this flag are false; leaving this true (as it was) kept
         // showing the main tab bar after logout since the `||` check still passed.

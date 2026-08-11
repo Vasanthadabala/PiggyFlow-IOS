@@ -30,7 +30,6 @@ struct SettingsView: View {
     @StateObject private var settingsAuth = SettingsAuthService()
     @ObservedObject private var cloudSync = CloudSyncManager.shared
     @State private var showClearLocalDataAlert = false
-    @State private var showComingSoonToast = false
     @State private var syncInProgress = false
 
     @State private var showEditNameSheet = false
@@ -324,7 +323,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Are you sure you want to logout?")
+            Text("This clears all PiggyFlow data on this device — transactions, accounts, budgets and goals. Your cloud backup is kept, so signing back in restores it.")
         }
         .alert("Delete Account", isPresented: $showDeleteAccountAlert) {
             Button("Delete", role: .destructive) {
@@ -531,33 +530,9 @@ struct SettingsView: View {
         settingsAuth.signInWithApple()
     }
 
+    /// Empties the stored records without signing the user out — the shared wipe owns the
+    /// details (accounts and receipt files included, which this used to miss).
     private func clearLocalData() {
-        do {
-            let expenses = try context.fetch(FetchDescriptor<Expense>())
-            for item in expenses {
-                context.delete(item)
-            }
-
-            let incomes = try context.fetch(FetchDescriptor<Income>())
-            for item in incomes {
-                context.delete(item)
-            }
-            
-            let trackers = try context.fetch(FetchDescriptor<TrackerRecord>())
-            for item in trackers {
-                context.delete(item)
-            }
-
-            let categoryContext = UserCategoryManager.shared.container.mainContext
-            let categories = try categoryContext.fetch(FetchDescriptor<UserCategory>())
-            for item in categories {
-                categoryContext.delete(item)
-            }
-
-            try context.save()
-            try categoryContext.save()
-        } catch {
-            print("Failed to clear local data: \(error.localizedDescription)")
-        }
+        DataManager.shared.wipeAllLocalData(includingPreferences: false)
     }
 }

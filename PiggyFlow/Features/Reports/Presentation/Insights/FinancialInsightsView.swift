@@ -161,7 +161,13 @@ struct FinancialInsightsView: View {
                         .foregroundColor(.secondary)
                 }
                 Spacer()
-                Button { } label: {
+                Menu {
+                    Picker("Period", selection: $selectedPeriod) {
+                        ForEach(InsightsPeriod.allCases, id: \.self) { period in
+                            Text(period.rawValue).tag(period)
+                        }
+                    }
+                } label: {
                     Image(systemName: "line.3.horizontal.decrease")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.appGreen)
@@ -169,7 +175,6 @@ struct FinancialInsightsView: View {
                         .background(Color.appGreen.opacity(0.12))
                         .clipShape(Circle())
                 }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
         }
@@ -386,7 +391,8 @@ struct FinancialInsightsView: View {
                 Text("Spending by Category")
                     .font(.system(size: 16, weight: .bold, design: .rounded))
                 Spacer()
-                Button { } label: {
+                // Category breakdown in full, with the month picker.
+                NavigationLink(destination: StatsView().hidesTabBarOnPush()) {
                     HStack(spacing: 2) {
                         Text("View All")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -468,7 +474,8 @@ struct FinancialInsightsView: View {
                     Text("Top Merchants")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                     Spacer()
-                    Button { } label: {
+                    // Merchants come from transactions, so the full list is the honest "all".
+                    NavigationLink(destination: RecentTransactionsView().hidesTabBarOnPush()) {
                         HStack(spacing: 2) {
                             Text("View All")
                                 .font(.system(size: 11, weight: .bold, design: .rounded))
@@ -519,7 +526,8 @@ struct FinancialInsightsView: View {
                         }
                     }
                 }
-                Button { } label: {
+                // Same destination as the header link above it.
+                NavigationLink(destination: RecentTransactionsView().hidesTabBarOnPush()) {
                     Text("View All Merchants")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
                         .foregroundColor(.appGreen)
@@ -542,7 +550,8 @@ struct FinancialInsightsView: View {
                     Text("Spending Trend")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                     Spacer()
-                    Button { } label: {
+                    // The trend chart at full size lives on the report.
+                    NavigationLink(destination: ReportDetailView().hidesTabBarOnPush()) {
                         HStack(spacing: 2) {
                             Text("View All")
                                 .font(.system(size: 11, weight: .bold, design: .rounded))

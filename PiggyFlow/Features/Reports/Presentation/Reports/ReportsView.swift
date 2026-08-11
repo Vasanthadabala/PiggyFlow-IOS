@@ -9,34 +9,64 @@ struct ReportsView: View {
     @Query private var expenses: [Expense]
     @Query private var incomes: [Income]
 
-    @State private var selectedPeriod: PeriodFilter = .custom
-    @State private var selectedDateRangeText: String = "May 1 – May 31, 2025"
+    @State private var selectedPeriod: PeriodFilter = .thisMonth
     @State private var showShareSheet: Bool = false
     @State private var pdfURLToShare: URL? = nil
-    @State private var selectedReportType: String? = nil
 
     enum PeriodFilter: String, CaseIterable, Identifiable {
-        case custom = "Custom"
         case thisMonth = "This Month"
         case lastMonth = "Last Month"
         case thisYear = "This Year"
         case allTime = "All Time"
 
         var id: String { rawValue }
+
+        /// `nil` = unbounded (All Time). Drives both what the report counts and what the date
+        /// banner reads, so the tabs can't say one thing while the numbers show another.
+        func interval(now: Date = Date()) -> DateInterval? {
+            let cal = Calendar.current
+            switch self {
+            case .allTime: return nil
+            case .thisMonth: return cal.dateInterval(of: .month, for: now)
+            case .lastMonth:
+                guard let prev = cal.date(byAdding: .month, value: -1, to: now) else { return nil }
+                return cal.dateInterval(of: .month, for: prev)
+            case .thisYear: return cal.dateInterval(of: .year, for: now)
+            }
+        }
+
+        /// The month the period is anchored to — what month-over-month comparisons measure from.
+        func referenceMonth(now: Date = Date()) -> Date {
+            let cal = Calendar.current
+            switch self {
+            case .lastMonth: return cal.date(byAdding: .month, value: -1, to: now) ?? now
+            default: return now
+            }
+        }
     }
 
     // MARK: - Real data
 
-    private var reportMonth: Date { Date() }
+    private var reportMonth: Date { selectedPeriod.referenceMonth() }
 
     private var monthExpenses: [Expense] {
-        let cal = Calendar.current
-        return expenses.filter { cal.isDate($0.date, equalTo: reportMonth, toGranularity: .month) }
+        guard let interval = selectedPeriod.interval() else { return expenses }
+        return expenses.filter { interval.contains($0.date) }
     }
 
     private var monthIncomes: [Income] {
-        let cal = Calendar.current
-        return incomes.filter { cal.isDate($0.date, equalTo: reportMonth, toGranularity: .month) }
+        guard let interval = selectedPeriod.interval() else { return incomes }
+        return incomes.filter { interval.contains($0.date) }
+    }
+
+    /// Reads back the period actually in effect rather than a fixed string.
+    private var selectedDateRangeText: String {
+        guard let interval = selectedPeriod.interval() else { return "All Time" }
+        let start = interval.start
+        let end = Calendar.current.date(byAdding: .day, value: -1, to: interval.end) ?? interval.end
+        let from = DateFormatter(); from.dateFormat = "MMM d"
+        let to = DateFormatter(); to.dateFormat = "MMM d, yyyy"
+        return "\(from.string(from: start)) – \(to.string(from: end))"
     }
 
     private var categoryBreakdown: [CategoryTotal] {
@@ -152,9 +182,7 @@ struct ReportsView: View {
                 .buttonStyle(.plain)
 
                 // Settings Action
-                Button {
-                    Haptics.light()
-                } label: {
+                NavigationLink(destination: SettingsView().hidesTabBarOnPush()) {
                     VStack(spacing: 2) {
                         Image(systemName: "gearshape")
                             .font(.system(size: 16, weight: .bold))
@@ -184,7 +212,7 @@ struct ReportsView: View {
                         }
                     } label: {
                         HStack(spacing: 5) {
-                            if period == .custom {
+                            if period == .allTime {
                                 Image(systemName: "calendar")
                                     .font(.system(size: 11, weight: .bold))
                             }
@@ -243,8 +271,10 @@ struct ReportsView: View {
 
             Spacer(minLength: 6)
 
-            Button {
-                Haptics.light()
+            Menu {
+                Picker("Period", selection: $selectedPeriod) {
+                    ForEach(PeriodFilter.allCases) { Text($0.rawValue).tag($0) }
+                }
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "square.and.pencil")
@@ -278,9 +308,7 @@ struct ReportsView: View {
 
                 Spacer()
 
-                Button {
-                    Haptics.light()
-                } label: {
+                NavigationLink(destination: ReportDetailView().hidesTabBarOnPush()) {
                     HStack(spacing: 2) {
                         Text("View All")
                             .font(.system(size: 12.5, weight: .bold, design: .rounded))
