@@ -298,7 +298,10 @@ struct AddTrackerView: View {
             isPaid: false,
             category: form.storedCategory(for: kind),
             currentAmount: kind == .goal ? form.currentAmountValue : 0,
-            notes: form.notes
+            notes: form.notes,
+            provider: form.storedProvider(for: kind),
+            paymentMethod: form.storedPaymentMethod(for: kind),
+            referenceID: (kind == .subscription || kind == .emi) ? form.referenceID.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         )
 
         context.insert(record)

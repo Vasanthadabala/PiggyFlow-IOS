@@ -13,6 +13,7 @@ struct ContentView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppleSignInManager.loginStatusKey) private var isUserLoggedIn: Bool = false
+    @AppStorage(AppConstants.Onboarding.completedKey) private var hasCompletedOnboarding: Bool = false
     @AppStorage("autoSyncEnabled") private var autoSyncEnabled: Bool = false
     @AppStorage("firebaseLastSyncDate") private var firebaseLastSyncDate: Double = 0
 
@@ -23,16 +24,21 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if isUserLoggedIn || appleSignInManager.isAuthenticated {
+            // Being signed in isn't enough on its own — onboarding continues *past* sign-in
+            // (account created, then the income/budget/goal/reminder setup steps). Keying the
+            // root on auth alone swapped this whole view out the moment Firebase authenticated,
+            // tearing down the onboarding navigation stack mid-flow and dropping the user on
+            // the dashboard. `hasCompletedOnboarding` is set only when the flow actually ends.
+            if isSignedIn && hasCompletedOnboarding {
                 MainTabView()
             } else {
                 OnBoardingScreen()
             }
         }
         .onAppear {
-            // If Firebase already has a signed-in user, this flips isAuthenticated and opens home.
+            // If Firebase already has a signed-in user, this flips isAuthenticated.
             appleSignInManager.checkExistingCredentials()
-            if isUserLoggedIn || appleSignInManager.isAuthenticated {
+            if isSignedIn {
                 CloudSyncManager.shared.handleLoginIfNeeded(context: context)
             }
             runAutoSyncIfDue()
@@ -52,6 +58,10 @@ struct ContentView: View {
                 runAutoSyncIfDue()
             }
         }
+    }
+
+    private var isSignedIn: Bool {
+        isUserLoggedIn || appleSignInManager.isAuthenticated
     }
 
     private func runAutoSyncIfDue() {

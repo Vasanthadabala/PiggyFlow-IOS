@@ -19,6 +19,12 @@ enum AppConstants {
         public static let firebaseLastSyncDate = "firebaseLastSyncDate"
     }
 
+    /// Onboarding runs past sign-in, so "signed in" and "finished onboarding" are separate
+    /// states — see `ContentView` for why conflating them broke the flow.
+    enum Onboarding {
+        public static let completedKey = "hasCompletedOnboarding"
+    }
+
     /// Keychain account identifiers.
     enum KeychainKey {
         public static let appleUserIdentifier = "apple.user.identifier"

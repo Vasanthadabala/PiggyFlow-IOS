@@ -205,7 +205,11 @@ struct HomeView: View {
     }
 
     private var upcomingPayments: [TrackerRecord] {
-        let sorted = trackerRecords.filter { !$0.isPaid }.sorted { $0.dueDate < $1.dueDate }
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let sorted = trackerRecords
+            .filter { !$0.isPaid && calendar.startOfDay(for: $0.dueDate) >= today }
+            .sorted { $0.dueDate < $1.dueDate }
         return Array(sorted.prefix(3))
     }
 
@@ -726,34 +730,38 @@ struct HomeView: View {
                 } else {
                     VStack(spacing: 12) {
                         ForEach(upcomingPayments.prefix(3)) { record in
-                            HStack(spacing: 8) {
-                                trackerIconAvatar(record)
+                            NavigationLink(destination: TrackerDetailView(record: record).hidesTabBarOnPush()) {
+                                HStack(spacing: 8) {
+                                    trackerIconAvatar(record)
 
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(record.name)
-                                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                                        .foregroundColor(.primary)
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.75)
-                                    Text(record.subType.capitalized)
-                                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.75)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(record.name)
+                                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                                            .foregroundColor(.primary)
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.75)
+                                        Text(record.subType.capitalized)
+                                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.75)
+                                    }
+
+                                    Spacer(minLength: 2)
+
+                                    VStack(alignment: .trailing, spacing: 1) {
+                                        Text(record.dueDate.formatted(.dateTime.day().month(.abbreviated)))
+                                            .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                                            .foregroundColor(.secondary)
+
+                                        Text("₹\(Int(record.amount).formatted())")
+                                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                                            .foregroundColor(.primary)
+                                    }
                                 }
-
-                                Spacer(minLength: 2)
-
-                                VStack(alignment: .trailing, spacing: 1) {
-                                    Text(record.dueDate.formatted(.dateTime.day().month(.abbreviated)))
-                                        .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                                        .foregroundColor(.secondary)
-
-                                    Text("₹\(Int(record.amount).formatted())")
-                                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                                        .foregroundColor(.primary)
-                                }
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }

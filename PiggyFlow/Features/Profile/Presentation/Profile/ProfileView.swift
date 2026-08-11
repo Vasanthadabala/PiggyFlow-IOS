@@ -119,19 +119,7 @@ struct ProfileView: View {
             // Profile is always reached by push (from Home's avatar), never a tab root, but
             // its header had no way back — `.navigationBarHidden(true)` below hides the
             // system chrome, and edge-swipe alone isn't a discoverable substitute.
-            Button {
-                Haptics.light()
-                dismiss()
-            } label: {
-                Image(systemName: AppIcon.Nav.back)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.appGreenDeep)
-                    .frame(width: 40, height: 40)
-                    .background(Color.appSurface)
-                    .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
-            }
-            .buttonStyle(.plain)
+            BackButton { dismiss() }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Profile")

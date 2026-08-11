@@ -137,6 +137,7 @@ struct TrackerFormState {
     var account: String = "Personal Account"
     var vendor: String = ""
     var autoDeducts: Bool = true
+    var referenceID: String = ""
 
     // EMI / Loan
     var loanType: String = "Home Loan"
@@ -250,13 +251,34 @@ struct TrackerFormState {
     }
 
     /// The spending/goal category written to `TrackerRecord.category` — Budget's own category
-    /// picker for budgets, Goal's `goalCategory` for goals, blank for subscription/EMI (neither
-    /// has a category concept in the form).
+    /// picker for budgets, Goal's `goalCategory` for goals, Subscription's own category picker
+    /// for subscriptions. EMI has no category concept in the form.
     func storedCategory(for kind: TrackerKind) -> String {
         switch kind {
         case .budget: return category
         case .goal:   return goalCategory
-        case .subscription, .emi: return ""
+        case .subscription: return subscriptionCategory
+        case .emi: return ""
+        }
+    }
+
+    /// Who the money goes to, written to `TrackerRecord.provider` — Subscription's
+    /// Vendor/Provider field, EMI's Lender/Bank field. Blank for budget/goal.
+    func storedProvider(for kind: TrackerKind) -> String {
+        switch kind {
+        case .subscription: return vendor
+        case .emi: return lender
+        case .budget, .goal: return ""
+        }
+    }
+
+    /// How it's paid, written to `TrackerRecord.paymentMethod` — Subscription's Payment
+    /// Method field, EMI's Payment Account field. Blank for budget/goal.
+    func storedPaymentMethod(for kind: TrackerKind) -> String {
+        switch kind {
+        case .subscription: return paymentMethod
+        case .emi: return paymentAccount
+        case .budget, .goal: return ""
         }
     }
 

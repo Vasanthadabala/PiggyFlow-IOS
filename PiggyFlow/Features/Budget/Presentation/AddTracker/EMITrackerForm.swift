@@ -70,6 +70,14 @@ struct EMITrackerForm: View {
                 )
             }
 
+            TrackerField(title: "Loan Account Number (Optional)") {
+                TrackerTextField(
+                    icon: "number",
+                    placeholder: "e.g. your loan account number",
+                    text: $form.referenceID
+                )
+            }
+
             TrackerField(title: "Set Reminder") {
                 TrackerReminderField(selection: $form.reminder)
             }

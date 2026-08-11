@@ -44,7 +44,31 @@ class AppleSignInManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        clearStaleSessionOnFreshInstall()
         startAuthStateListener()
+    }
+
+    /// Firebase persists a signed-in session in the Keychain, which iOS does **not** erase
+    /// when the app is deleted — so uninstall-then-reinstall still finds the old session and
+    /// `ContentView` jumps straight to the signed-in state, skipping onboarding entirely even
+    /// though this is a brand-new install from the user's point of view.
+    ///
+    /// `UserDefaults`, unlike Keychain, *is* wiped on uninstall, so a flag stored there
+    /// reliably reads back false exactly once per fresh install — the signal used here to
+    /// discard whatever Firebase found leftover in the Keychain before anything else (the
+    /// auth-state listener below, `ContentView`'s own check) has a chance to read it.
+    private func clearStaleSessionOnFreshInstall() {
+        let key = "hasCompletedFirstLaunch"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+
+        #if canImport(FirebaseAuth)
+        if Auth.auth().currentUser != nil {
+            try? Auth.auth().signOut()
+        }
+        #endif
+        UserDefaults.standard.set(false, forKey: Self.loginStatusKey)
+        UserDefaults.standard.set(false, forKey: AppConstants.Onboarding.completedKey)
     }
 
     deinit {
@@ -184,10 +208,11 @@ class AppleSignInManager: NSObject, ObservableObject {
 
         CloudSyncManager.shared.handleLogout()
 
-        // Reset authentication state
+        // Reset authentication state — ContentView switches to onboarding once both
+        // isAuthenticated and this flag are false; leaving this true (as it was) kept
+        // showing the main tab bar after logout since the `||` check still passed.
         isAuthenticated = false
-        // Keep user in app flow even after logout.
-        UserDefaults.standard.set(true, forKey: Self.loginStatusKey)
+        UserDefaults.standard.set(false, forKey: Self.loginStatusKey)
         user = nil
         authErrorMessage = nil
         isAuthInProgress = false
@@ -240,6 +265,8 @@ class AppleSignInManager: NSObject, ObservableObject {
         // Step 1: Reset authentication state
         isAuthenticated = false
         UserDefaults.standard.set(false, forKey: Self.loginStatusKey)
+        // A deleted account starts over from the beginning, onboarding included.
+        UserDefaults.standard.set(false, forKey: AppConstants.Onboarding.completedKey)
         user = nil
 
         // Step 2: Remove all user data and sync flags

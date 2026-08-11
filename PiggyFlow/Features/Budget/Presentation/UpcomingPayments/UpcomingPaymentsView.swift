@@ -23,14 +23,18 @@ struct UpcomingPaymentsView: View {
         }
     }
 
+    /// Everything else due this month and unpaid — later in the month (>7 days out), or
+    /// already overdue (due date earlier this month, still unpaid). The old `diff > 7` filter
+    /// silently dropped overdue records: they aren't in `dueSoonRecords` either (which requires
+    /// `diff >= 0`), so a real overdue bill vanished from both lists while still counting toward
+    /// `thisMonthCount` in the stats grid above — a live record the user could never see or tap.
     private var dueThisMonthRecords: [TrackerRecord] {
+        let dueSoonIDs = Set(dueSoonRecords.map { $0.id })
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
         return allPaymentRecords.filter { record in
-            let dueDay = cal.startOfDay(for: record.dueDate)
-            let diff = cal.dateComponents([.day], from: today, to: dueDay).day ?? 999
-            // Due this month but NOT in due soon
-            return diff > 7 && cal.isDate(record.dueDate, equalTo: Date(), toGranularity: .month) && !record.isPaid
+            !dueSoonIDs.contains(record.id)
+                && cal.isDate(record.dueDate, equalTo: Date(), toGranularity: .month)
+                && !record.isPaid
         }
     }
 
@@ -259,56 +263,60 @@ struct UpcomingPaymentsView: View {
         let dueDay = cal.startOfDay(for: record.dueDate)
         let daysDiff = cal.dateComponents([.day], from: today, to: dueDay).day ?? 0
 
-        HStack(spacing: 14) {
-            paymentAvatar(record)
+        NavigationLink(destination: TrackerDetailView(record: record).hidesTabBarOnPush()) {
+            HStack(spacing: 14) {
+                TrackerAvatar(record: record)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(record.name)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(record.name)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
 
-                HStack(spacing: 4) {
-                    Text(record.type.capitalized)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                    Text("•")
-                        .foregroundColor(.secondary)
-                    Text(record.subType.isEmpty ? record.type.capitalized : record.subType)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    HStack(spacing: 4) {
+                        Text(record.type.capitalized)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                        Text("•")
+                            .foregroundColor(.secondary)
+                        Text(record.subType.isEmpty ? record.type.capitalized : record.subType)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+
+                    Text("Due in \(daysDiff) day\(daysDiff == 1 ? "" : "s")")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(Color.appGreen)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.appGreen.opacity(0.12))
+                        .clipShape(Capsule())
                 }
 
-                Text("Due in \(daysDiff) day\(daysDiff == 1 ? "" : "s")")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(Color.appGreen)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.appGreen.opacity(0.12))
-                    .clipShape(Capsule())
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("₹\(Int(record.amount).formatted())")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                    Text(record.dueDate.formatted(.dateTime.month(.abbreviated).day().year()))
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.secondary.opacity(0.5))
             }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 3) {
-                Text("₹\(Int(record.amount).formatted())")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-                Text(record.dueDate.formatted(.dateTime.month(.abbreviated).day().year()))
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(.secondary)
-            }
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.secondary.opacity(0.5))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(Color.appSurface)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(Color.appSurface)
+        .buttonStyle(.plain)
     }
 
     // MARK: - Due This Month Section
@@ -344,166 +352,74 @@ struct UpcomingPaymentsView: View {
 
     @ViewBuilder
     private func dueThisMonthPaymentRow(_ record: TrackerRecord) -> some View {
-        HStack(spacing: 14) {
-            paymentAvatar(record)
+        NavigationLink(destination: TrackerDetailView(record: record).hidesTabBarOnPush()) {
+            HStack(spacing: 14) {
+                TrackerAvatar(record: record)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(record.name)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(record.name)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
 
-                HStack(spacing: 4) {
-                    Text(record.type.capitalized)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                    Text("•")
-                        .foregroundColor(.secondary)
-                    Text(record.subType.isEmpty ? record.type.capitalized : record.subType)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                    Image(systemName: "calendar")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Text(record.dueDate.formatted(.dateTime.month(.abbreviated).day().year()))
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(record.type.capitalized)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                        Text("•")
+                            .foregroundColor(.secondary)
+                        Text(record.subType.isEmpty ? record.type.capitalized : record.subType)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                        Image(systemName: "calendar")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        Text(record.dueDate.formatted(.dateTime.month(.abbreviated).day().year()))
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-            }
 
-            Spacer()
+                Spacer()
 
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("₹\(Int(record.amount).formatted())")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("₹\(Int(record.amount).formatted())")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
 
-                // Type badge for subscriptions
-                if record.type.lowercased() == "subscription" {
-                    Text("Subscription")
-                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                        .foregroundColor(Color.appGreen)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.appGreen.opacity(0.12))
-                        .clipShape(Capsule())
-                } else if record.type.lowercased() == "emi" {
-                    Text("EMI")
-                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(red: 30/255, green: 64/255, blue: 175/255))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color(red: 30/255, green: 64/255, blue: 175/255).opacity(0.12))
-                        .clipShape(Capsule())
+                    // Type badge for subscriptions
+                    if record.type.lowercased() == "subscription" {
+                        Text("Subscription")
+                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .foregroundColor(Color.appGreen)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.appGreen.opacity(0.12))
+                            .clipShape(Capsule())
+                    } else if record.type.lowercased() == "emi" {
+                        Text("EMI")
+                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(red: 30/255, green: 64/255, blue: 175/255))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color(red: 30/255, green: 64/255, blue: 175/255).opacity(0.12))
+                            .clipShape(Capsule())
+                    }
                 }
-            }
 
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.secondary.opacity(0.5))
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.secondary.opacity(0.5))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(Color.appSurface)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(Color.appSurface)
-    }
-
-    // MARK: - Payment Avatar
-    @ViewBuilder
-    private func paymentAvatar(_ record: TrackerRecord) -> some View {
-        let nameLower = record.name.lowercased()
-        if nameLower.contains("netflix") {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.black)
-                Text("N")
-                    .font(.system(size: 20, weight: .black, design: .rounded))
-                    .foregroundColor(.red)
-            }
-            .frame(width: 46, height: 46)
-        } else if nameLower.contains("spotify") {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.black)
-                Image(systemName: "waveform")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(Color(red: 30/255, green: 215/255, blue: 96/255))
-            }
-            .frame(width: 46, height: 46)
-        } else if nameLower.contains("amazon") {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(red: 255/255, green: 153/255, blue: 0/255))
-                Text("prime")
-                    .font(.system(size: 10, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
-            }
-            .frame(width: 46, height: 46)
-        } else if nameLower.contains("mobile") || nameLower.contains("phone") {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(red: 30/255, green: 64/255, blue: 175/255))
-                Image(systemName: "phone.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.white)
-            }
-            .frame(width: 46, height: 46)
-        } else if nameLower.contains("electricity") {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(red: 217/255, green: 119/255, blue: 6/255))
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.white)
-            }
-            .frame(width: 46, height: 46)
-        } else if nameLower.contains("loan") || nameLower.contains("emi") || record.type.lowercased() == "emi" {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.appGreen.opacity(0.15))
-                Image(systemName: "building.columns.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(Color.appGreen)
-            }
-            .frame(width: 46, height: 46)
-        } else if nameLower.contains("gas") {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.orange.opacity(0.15))
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.orange)
-            }
-            .frame(width: 46, height: 46)
-        } else if nameLower.contains("internet") {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.blue.opacity(0.15))
-                Image(systemName: "wifi")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.blue)
-            }
-            .frame(width: 46, height: 46)
-        } else if nameLower.contains("swiggy") {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.orange)
-                Image(systemName: "bag.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.white)
-            }
-            .frame(width: 46, height: 46)
-        } else {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.appGreen.opacity(0.12))
-                Text(String(record.name.prefix(1)).uppercased())
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundColor(Color.appGreen)
-            }
-            .frame(width: 46, height: 46)
-        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Enable Reminders Banner

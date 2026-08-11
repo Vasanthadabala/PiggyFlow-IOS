@@ -196,6 +196,22 @@ final class TrackerRecord {
     /// `CloudSyncManager`.
     var notes: String = ""
 
+    /// Who the money goes to — the Subscription form's Vendor/Provider field, or the EMI
+    /// form's Lender/Bank field. Both were already collected and shown to the user, just
+    /// discarded on save until now. Not pushed to Firestore yet — see `CloudSyncManager`.
+    var provider: String = ""
+    /// How it's paid — the Subscription form's Payment Method, or the EMI form's Payment
+    /// Account. Same story as `provider`. Not pushed to Firestore yet — see `CloudSyncManager`.
+    var paymentMethod: String = ""
+    /// Optional subscription/loan reference or account number. Not pushed to Firestore yet —
+    /// see `CloudSyncManager`.
+    var referenceID: String = ""
+    /// Real payment history — one entry per "Mark as Paid" tap, oldest first. Starts empty;
+    /// there's no way to back-fill payments that happened before this field existed, so old
+    /// trackers just show no history until the next real payment. Not pushed to Firestore yet
+    /// — see `CloudSyncManager`.
+    var paidDates: [Date] = []
+
     init(
         type: String = "subscription",
         name: String = "",
@@ -206,7 +222,11 @@ final class TrackerRecord {
         isPaid: Bool = false,
         category: String = "",
         currentAmount: Double = 0,
-        notes: String = ""
+        notes: String = "",
+        provider: String = "",
+        paymentMethod: String = "",
+        referenceID: String = "",
+        paidDates: [Date] = []
     ) {
         self.type = type
         self.name = name
@@ -218,5 +238,9 @@ final class TrackerRecord {
         self.category = category
         self.currentAmount = currentAmount
         self.notes = notes
+        self.provider = provider
+        self.paymentMethod = paymentMethod
+        self.referenceID = referenceID
+        self.paidDates = paidDates
     }
 }

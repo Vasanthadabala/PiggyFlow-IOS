@@ -28,7 +28,14 @@ struct TrackerView: View {
     private var goalTrackers: [TrackerRecord] { trackerRecords.filter { $0.type == "goal" } }
 
     private var upcomingTrackers: [TrackerRecord] {
-        Array(trackerRecords.filter { !$0.isPaid }.sorted { $0.dueDate < $1.dueDate }.prefix(4))
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        return Array(
+            trackerRecords
+                .filter { !$0.isPaid && calendar.startOfDay(for: $0.dueDate) >= today }
+                .sorted { $0.dueDate < $1.dueDate }
+                .prefix(4)
+        )
     }
 
     private var currentMonthRangeText: String {
@@ -457,7 +464,7 @@ struct TrackerView: View {
 
     @ViewBuilder
     private func paymentRow(_ record: TrackerRecord) -> some View {
-        NavigationLink(destination: UpcomingPaymentsView().hidesTabBarOnPush()) {
+        NavigationLink(destination: TrackerDetailView(record: record).hidesTabBarOnPush()) {
             HStack(spacing: 12) {
                 trackerAvatar(record)
 

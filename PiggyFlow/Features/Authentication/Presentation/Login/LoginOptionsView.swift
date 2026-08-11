@@ -5,6 +5,7 @@ struct LoginOptionsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var appleSignInManager: AppleSignInManager
     @AppStorage(AppleSignInManager.loginStatusKey) private var isUserLoggedIn: Bool = false
+    @AppStorage(AppConstants.Onboarding.completedKey) private var hasCompletedOnboarding: Bool = false
     @State private var navigateToHome: Bool = false
     @State private var didStartAuthFlow: Bool = false
     @State private var previousAuthInProgress: Bool = false
@@ -138,6 +139,7 @@ struct LoginOptionsView: View {
                 Button {
                     didStartAuthFlow = false
                     isUserLoggedIn = true
+                    hasCompletedOnboarding = true
                     navigateToHome = true
                 } label: {
                     Text("Skip Setup")
@@ -164,6 +166,9 @@ struct LoginOptionsView: View {
         }
         .onChange(of: appleSignInManager.isAuthenticated) { _, isAuthenticated in
             if didStartAuthFlow && isAuthenticated && !appleSignInManager.isAuthInProgress {
+                // This screen is the returning-user door ("Log in" / "Skip"), not the new-account
+                // path — there's no setup left to run, so the flow ends here.
+                hasCompletedOnboarding = true
                 navigateToHome = true
             }
         }
