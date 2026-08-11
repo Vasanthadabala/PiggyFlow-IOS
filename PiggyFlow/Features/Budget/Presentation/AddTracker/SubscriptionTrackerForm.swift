@@ -68,6 +68,14 @@ struct SubscriptionTrackerForm: View {
                 )
             }
 
+            TrackerField(title: "Reference ID (Optional)") {
+                TrackerTextField(
+                    icon: "number",
+                    placeholder: "e.g. subscription or order ID",
+                    text: $form.referenceID
+                )
+            }
+
             TrackerToggleField(
                 title: "Auto-deducts from account",
                 subtitle: "Enable if the amount is auto-deducted on due date",

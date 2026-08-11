@@ -59,14 +59,7 @@ struct AboutView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    Haptics.light()
-                    dismiss()
-                } label: {
-                    Image(systemName: AppIcon.Nav.back)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.appGreenDeep)
-                }
+                BackButton { dismiss() }
             }
         }
         .sheet(isPresented: $showWhatsNew) { WhatsNewSheet() }

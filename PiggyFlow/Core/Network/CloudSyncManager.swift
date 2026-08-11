@@ -138,7 +138,7 @@ final class CloudSyncManager: ObservableObject {
         upsert(
             kind: .tracker,
             id: tracker.id,
-            // NOTE: category/currentAmount/notes are intentionally local-only for now (see
+            // NOTE: category/currentAmount/notes/provider/paymentMethod/referenceID/paidDates are intentionally local-only for now (see
             // TrackerRecord) — not included in this field list, so they won't sync across
             // devices yet.
             data: [
@@ -296,7 +296,7 @@ final class CloudSyncManager: ObservableObject {
             let trackers = try context.fetch(FetchDescriptor<TrackerRecord>())
             for tracker in trackers {
                 let dirtyAt = dirtyDate(kind: .tracker, id: tracker.id) ?? Date()
-                // NOTE: category/currentAmount/notes are intentionally local-only for now — not
+                // NOTE: category/currentAmount/notes/provider/paymentMethod/referenceID/paidDates are intentionally local-only for now — not
                 // included in this field list, so they won't sync across devices yet.
                 let data: [String: Any] = [
                     "id": tracker.id,
@@ -676,7 +676,7 @@ final class CloudSyncManager: ObservableObject {
                         return created
                     }()
 
-                    // NOTE: category/currentAmount/notes are intentionally local-only for now —
+                    // NOTE: category/currentAmount/notes/provider/paymentMethod/referenceID/paidDates are intentionally local-only for now —
                     // not part of this remote payload, so a value set on another device won't
                     // land here.
                     tracker.type = stringValue(from: data["type"])
@@ -725,7 +725,7 @@ final class CloudSyncManager: ObservableObject {
                     return created
                 }()
 
-                // NOTE: category/currentAmount/notes are intentionally local-only for now — not
+                // NOTE: category/currentAmount/notes/provider/paymentMethod/referenceID/paidDates are intentionally local-only for now — not
                 // part of this remote payload, so a value set on another device won't land here.
                 tracker.type = stringValue(from: data["type"])
                 tracker.name = stringValue(from: data["name"])
